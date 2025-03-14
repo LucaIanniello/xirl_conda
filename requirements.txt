@@ -15,5 +15,6 @@ scipy
 pandas
 gdown==4.4.0
 protobuf~=3.19.0
+pillow<10.0.0
 git+https://github.com/kevinzakka/torchkit.git@v0.0.2
 git+https://github.com/kevinzakka/x-magical.git@v0.0.2
