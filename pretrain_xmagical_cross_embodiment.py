@@ -31,11 +31,11 @@ import yaml
 
 # Mapping from pretraining algorithm to config file.
 ALGO_TO_CONFIG = {
-    "xirl": "configs/xmagical/pretraining/tcc.py",
-    "lifs": "configs/xmagical/pretraining/lifs.py",
-    "tcn": "configs/xmagical/pretraining/tcn.py",
-    "goal_classifier": "configs/xmagical/pretraining/classifier.py",
-    "raw_imagenet": "configs/xmagical/pretraining/imagenet.py",
+    "xirl": "xirl_conda/configs/xmagical/pretraining/tcc.py",
+    "lifs": "xirl_conda/configs/xmagical/pretraining/lifs.py",
+    "tcn": "xirl_conda/configs/xmagical/pretraining/tcn.py",
+    "goal_classifier": "xirl_conda/configs/xmagical/pretraining/classifier.py",
+    "raw_imagenet": "xirl_conda/configs/xmagical/pretraining/imagenet.py",
 }
 # We want to pretrain on the entire 1k demonstrations.
 MAX_DEMONSTRATIONS = -1
@@ -71,7 +71,7 @@ def main(_):
     subprocess.run(
         [
             "python",
-            "pretrain.py",
+            "xirl_conda/pretrain.py",
             "--experiment_name",
             experiment_name,
             "--raw_imagenet" if FLAGS.algo == "raw_imagenet" else "",
