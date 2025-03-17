@@ -228,4 +228,7 @@ class ReplayBufferGoalClassifier(ReplayBufferLearnedReward):
     image_tensors = [self._pixel_to_tensor(i) for i in self.pixels_staging]
     image_tensors = torch.cat(image_tensors, dim=1)
     prob = torch.sigmoid(self.model.infer(image_tensors).embs)
-    return prob.item()
+    return prob.detach().cpu().numpy()
+
+
+
