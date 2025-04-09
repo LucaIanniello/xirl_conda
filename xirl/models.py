@@ -27,7 +27,7 @@ import torch.nn.functional as F
 from torchvision import models
 from torchvision.models.resnet import BasicBlock
 from torchvision.models.resnet import ResNet
-from torchvision.models.utils import load_state_dict_from_url
+from torch.hub import load_state_dict_from_url
 
 
 @dataclasses.dataclass

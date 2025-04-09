@@ -19,6 +19,12 @@ from typing import Dict
 from ml_collections import FrozenConfigDict
 
 # The embodiments we used in the x-MAGICAL experiments.
+
+TASKS = frozenset([
+    "sweep_to_top",
+])
+
+
 EMBODIMENTS = frozenset([
     "shortstick",
     "mediumstick",

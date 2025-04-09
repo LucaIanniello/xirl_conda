@@ -32,7 +32,7 @@ from tensorboard.backend.event_processing import event_accumulator
 
 _PLOT_DIR = flags.DEFINE_string(
     "plot_dir",
-    "/tmp/xirl/plots",
+    "/home/lucaianniello/Thesis/XIRL/results/shortstick/plots/",
     "Directory wherein to store plots.")
 _MATPLOTLIB_SIZE = flags.DEFINE_integer(
     "size",
@@ -78,12 +78,16 @@ class Experiment:
     self.path = pathlib.Path(self.path)
     if not self.path.exists():
       raise ValueError(f"{self.path} does not exist.")
-    # Find seed directories.
-    subdirs = [f for f in self.path.iterdir() if f.is_dir()]
-    # cd into their respective log subdirs.
-    logdirs = [subdir / "tb" for subdir in subdirs]
-    # Read Tensorboard logs.
-    logfiles = [list(logdir.iterdir())[0] for logdir in logdirs]
+     # Directly check if "tb" exists inside the main directory
+    tb_dir = self.path / "tb"
+    if not tb_dir.exists():
+        raise ValueError(f"{tb_dir} does not exist.")
+
+    # Get all TensorBoard log files inside "tb"
+    logfiles = list(tb_dir.iterdir())
+    if not logfiles:
+        raise ValueError(f"No log files found in {tb_dir}")
+
     data = []
     for logfile in logfiles:
       ea = event_accumulator.EventAccumulator(str(logfile))
@@ -108,11 +112,11 @@ def cross_shortstick(savename):
   experiments = [
       Experiment(
           # Note: replace with an actual experiment path.
-          path="/PATH/TO/AN/EXPERIMENT/HERE/",
+          path="/home/lucaianniello/Thesis/XIRL/results/shortstick/2/",
           # Note: You can customize the below attributes to your liking.
           name="XIRL",
           color="tab:red",
-          linestyle="dashdot",
+          linestyle="solid",
       ),
   ]
 
@@ -142,7 +146,7 @@ def cross_shortstick(savename):
 
   ax.set_xlabel("Steps (thousands)")
   ax.set_ylabel("Success Rate")
-  ax.set_title("short-stick")
+  ax.set_title("Gripper")
 
   ax.legend(loc="lower right")
   ax.grid(linestyle="--", linewidth=0.5)
@@ -159,7 +163,7 @@ def cross_shortstick(savename):
 def main(_):
   os.makedirs(_PLOT_DIR.value, exist_ok=True)
   update_plotting_params(_MATPLOTLIB_SIZE.value)
-  cross_shortstick("cross_embodiment_shortstick")
+  cross_shortstick("shortstick_2")
 
 
 if __name__ == "__main__":
