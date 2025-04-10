@@ -3,3 +3,5 @@ datasets/
 
 # Ignore temporary and cache files
 /tmp/
+
+tests/

@@ -175,9 +175,9 @@ def get_random_string(n=5):
 	return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(n))
 
 random_id = get_current_date() + '_' + get_random_string(5)
-vid_path = "./tests/dataset/" + random_id
+vid_path = "/tmp/xirl/tests/dataset/" + random_id
 os.makedirs(vid_path, exist_ok=True)
-processed_vid_path = "./tests/processed_dataset/" + random_id
+processed_vid_path = "/tmp/xirl/tests/processed_dataset/" + random_id
 os.makedirs(processed_vid_path, exist_ok=True)
 processed_frames = []
 
@@ -411,7 +411,8 @@ def main(_):
   # Access the window manager for the plot window
   plot_window = plt.gcf().canvas.manager.window
   # Set the window position using geometry (x, y position)
-  plot_window.move(300, 300)  # Set the plot window at position (300, 300) on the screen
+  plot_window.geometry("+300+300")  # Move the window to position (300, 300)
+
   plt.pause(0.5)
   
 
