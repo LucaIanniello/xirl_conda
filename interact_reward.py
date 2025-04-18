@@ -25,7 +25,7 @@ from xmagical.utils import KeyboardEnvInteractor
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_enum("embodiment", "longstick", EMBODIMENTS,
+flags.DEFINE_enum("embodiment", "gripper", EMBODIMENTS,
                   "The agent embodiment.")
 flags.DEFINE_boolean(
     "exit_on_done", True,
@@ -44,8 +44,8 @@ def main(_):
   env = utils.make_env(env_name, seed=0)
 
   # Reward learning wrapper.
-  if FLAGS.config.reward_wrapper.pretrained_path is not None:
-    env = utils.wrap_learned_reward(env, FLAGS.config)
+  # if FLAGS.config.reward_wrapper.pretrained_path is not None:
+  #   env = utils.wrap_learned_reward(env, FLAGS.config)
 
   viewer = KeyboardEnvInteractor(action_dim=env.action_space.shape[0])
 
