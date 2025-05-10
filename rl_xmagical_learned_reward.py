@@ -40,6 +40,8 @@ def main(_):
 
   if kwargs["algo"] == "goal_classifier":
     reward_type = "goal_classifier"
+  elif kwargs["algo"] == "holdr":
+    reward_type = "holdr"
   else:
     reward_type = "distance_to_goal"
 

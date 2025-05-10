@@ -28,6 +28,8 @@ from tqdm.auto import tqdm
 import utils
 from xirl import common
 from xirl.models import SelfSupervisedModel
+import pdb
+import json
 
 # pylint: disable=logging-fstring-interpolation
 
@@ -42,6 +44,16 @@ flags.DEFINE_boolean(
 ModelType = SelfSupervisedModel
 DataLoaderType = typing.Dict[str, torch.utils.data.DataLoader]
 
+def read_subgoal_from_file(file_path):
+    with open(file_path, 'r') as f:
+        subgoal_data = json.load(f)
+
+    # Process the values to extract the last numbers
+    processed_data = {}
+    for key, paths in subgoal_data.items():
+      processed_data[key] = [int(path.split('/')[-1].split('.')[0]) for path in paths]
+
+    return processed_data
 
 def embed(
     model,
@@ -64,6 +76,62 @@ def embed(
   distance_scale = 1.0 / dist_to_goal
   return goal_emb, distance_scale
 
+def embed_subtasks(
+    model,
+    downstream_loader,
+    device,
+    subgoal_data
+):
+  """Embed the stored trajectories and compute mean goal embedding."""
+  init_embs = []
+  all_subgoal_frames_embs = []
+  for class_name, class_loader in downstream_loader.items():
+    logging.info("Embedding %s.", class_name)
+    for batch in tqdm(iter(class_loader), leave=False):
+      video_id = batch["video_name"][0].split("/")[-1]
+      subgoal_frames = subgoal_data[video_id]
+      out = model.infer(batch["frames"].to(device))
+      emb = out.numpy().embs
+      init_embs.append(emb[0, :])
+      video_subgoal_embs = []
+      for idx in subgoal_frames:
+        video_subgoal_embs.append(emb[idx, :])
+      all_subgoal_frames_embs.append(video_subgoal_embs)
+  
+# Compute the mean embedding for each subtask (column) across all videos (rows)
+  num_subtasks = max(len(video_embs) for video_embs in all_subgoal_frames_embs)
+  subtask_means = []
+
+  for subtask_idx in range(num_subtasks):
+      subtask_embs = [
+          video_embs[subtask_idx]
+          for video_embs in all_subgoal_frames_embs
+          if len(video_embs) > subtask_idx
+      ]
+      subtask_mean = np.mean(np.stack(subtask_embs, axis=0), axis=0, keepdims=True)
+      subtask_means.append(subtask_mean)
+
+  # Convert subtask means to a structured array
+  subtask_means = np.vstack(subtask_means)  # Shape: (num_subtasks, embedding_dim)
+  # Compute the distance vector
+  dist_to_goal = []
+  # Distance between the initial embedding and the first subtask
+  dist_to_goal.append(
+      np.linalg.norm(np.stack(init_embs, axis=0) - subtask_means[0], axis=-1).mean()
+  )
+  # Distances between consecutive subtasks
+  for i in range(1, num_subtasks):
+      dist_to_goal.append(
+          np.linalg.norm(subtask_means[i - 1] - subtask_means[i], axis=-1)
+      )
+
+  dist_to_goal = np.array(dist_to_goal)  # Convert to a NumPy array
+  distance_scale = []
+  for i in range(len(dist_to_goal)):
+      distance_scale.append(1.0 / dist_to_goal[i])
+  distance_scale = np.array(distance_scale)  # Convert to a NumPy array
+  #pdb.set_trace()
+  return subtask_means, distance_scale
 
 def setup():
   """Load the latest embedder checkpoint and dataloaders."""
@@ -84,9 +152,17 @@ def main(_):
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
   model, downstream_loader = setup()
   model.to(device).eval()
-  goal_emb, distance_scale = embed(model, downstream_loader, device)
-  utils.save_pickle(FLAGS.experiment_path, goal_emb, "goal_emb.pkl")
-  utils.save_pickle(FLAGS.experiment_path, distance_scale, "distance_scale.pkl")
+  subgoal_file_path = "/home/lianniello/xirl_thesis/xirl_conda/new_env_dataset/subgoal_frames.json"
+  subgoal_data = read_subgoal_from_file(subgoal_file_path)
+
+  if "holdr_embodiment" in FLAGS.experiment_path:
+    subtask_means, distance_scale = embed_subtasks(model, downstream_loader, device, subgoal_data)
+    utils.save_pickle(FLAGS.experiment_path, subtask_means, "subtask_means.pkl")
+    utils.save_pickle(FLAGS.experiment_path, distance_scale, "distance_scale.pkl")
+  else:
+    goal_emb, distance_scale = embed(model, downstream_loader, device)
+    utils.save_pickle(FLAGS.experiment_path, goal_emb, "goal_emb.pkl")
+    utils.save_pickle(FLAGS.experiment_path, distance_scale, "distance_scale.pkl")
 
 
 if __name__ == "__main__":

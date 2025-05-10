@@ -39,6 +39,7 @@ ALGORITHMS = frozenset([
     "lifs",
     "goal_classifier",
     "raw_imagenet",
+    "holdr"
 ])
 
 # A mapping from x-MAGICAL embodiment to RL training iterations.

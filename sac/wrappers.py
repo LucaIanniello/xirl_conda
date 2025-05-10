@@ -182,7 +182,7 @@ class VideoRecorder(gym.Wrapper):
       self,
       env,
       save_dir,
-      resolution = (128, 128),
+      resolution = (256, 256),
       fps = 30,
   ):
     super().__init__(env)
@@ -309,6 +309,7 @@ class DistanceToGoalLearnedVisualReward(LearnedVisualReward):
 
   def _get_reward_from_image(self, image):
     """Forward the pixels through the model and compute the reward."""
+    #print("Computing reward from image dist.")
     image_tensor = self._to_tensor(image)
     emb = self._model.infer(image_tensor).numpy().embs
     dist = -1.0 * np.linalg.norm(emb - self._goal_emb)
@@ -321,6 +322,92 @@ class GoalClassifierLearnedVisualReward(LearnedVisualReward):
 
   def _get_reward_from_image(self, image):
     """Forward the pixels through the model and compute the reward."""
+    print("Computing reward from image.")
     image_tensor = self._to_tensor(image)
     prob = torch.sigmoid(self._model.infer(image_tensor).embs)
     return prob.item()
+
+class HOLDRLearnedVisualReward(LearnedVisualReward):
+    def __init__(
+        self,
+        subtask_means,
+        distance_scale,
+        subtask_threshold=0.2,
+        subtask_cost=2.0,
+        subtask_hold_steps=3,
+        **base_kwargs,
+    ):
+        super().__init__(**base_kwargs)
+
+        self._subtask_means = np.atleast_2d(subtask_means)  # (num_subtasks, emb_dim)
+        self._distance_scale = distance_scale               # (num_subtasks,)
+        self._num_subtasks = len(subtask_means)
+
+        # Subtask tracking
+        self._subtask = 0
+        self._subtask_threshold = subtask_threshold
+        self._subtask_cost = subtask_cost
+        self._subtask_hold_steps = subtask_hold_steps
+        self._subtask_solved_counter = 0
+        self._non_decreasing_reward = False
+        self._prev_reward= 0.0
+        
+        self._distance_normalizer = 5
+        
+    def reset_state(self):
+        # print("Resetting HOLDR wrapper.")
+        self._subtask = 0
+        self._subtask_solved_counter = 0
+        self._prev_reward = 0.0
+        
+    def _compute_embedding_distance(self, emb, goal_emb, subtask_idx):
+        dist = np.linalg.norm(emb - goal_emb)
+        dist *= self._distance_scale[subtask_idx]
+        return dist
+    
+    def _check_subtask_completion(self, dist, current_reward):
+        if dist < self._subtask_threshold:
+            self._subtask_solved_counter += 1
+            if self._subtask_solved_counter >= self._subtask_hold_steps:
+                self._subtask = min(self._num_subtasks - 1, self._subtask + 1)
+                self._subtask_solved_counter = 0
+                if self._non_decreasing_reward:
+                    self._prev_reward = current_reward
+        else:
+            self._subtask_solved_counter = 0
+            
+    def _get_reward_from_image(self, image):
+        """Forward pixels through model, compute reward w.r.t. current subtask."""
+        image_tensor = self._to_tensor(image)
+        emb = self._model.infer(image_tensor).numpy().embs  # Shape: (emb_dim,)
+        
+        # Current subtask goal
+        goal_emb = self._subtask_means[self._subtask]
+
+        # Distance-based reward
+        dist = self._compute_embedding_distance(emb, goal_emb, self._subtask)
+        # print(f"Subtask {self._subtask}, Distance: {dist}")
+
+        shaping = (self._num_subtasks - self._subtask) * self._subtask_cost
+
+        if self._non_decreasing_reward:
+            reward = self._pred_reward + (1.0 - dist)
+        else:
+            reward = - (dist + shaping) / self._distance_normalizer
+            
+        if self._subtask == 1:
+                print("Subtask 1 completed, reward:", reward)
+        elif self._subtask == 2:
+                print("Subtask 2 completed, reward:", reward)
+            
+        # Check if the subtask is completed
+        self._check_subtask_completion(dist, reward)
+            
+        return reward
+        
+
+
+
+
+  
+

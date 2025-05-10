@@ -203,6 +203,7 @@ def wrap_learned_reward(env, config):
       "device": device,
       "res_hw": model_config.data_augmentation.image_size,
   }
+  
 
   if config.reward_wrapper.type == "goal_classifier":
     env = wrappers.GoalClassifierLearnedVisualReward(**kwargs)
@@ -212,6 +213,12 @@ def wrap_learned_reward(env, config):
     kwargs["distance_scale"] = load_pickle(pretrained_path,
                                            "distance_scale.pkl")
     env = wrappers.DistanceToGoalLearnedVisualReward(**kwargs)
+    
+  elif config.reward_wrapper.type == "holdr":
+    kwargs["subtask_means"] = load_pickle(pretrained_path, "subtask_means.pkl")
+    kwargs["distance_scale"] = load_pickle(pretrained_path,
+                                           "distance_scale.pkl")
+    env = wrappers.HOLDRLearnedVisualReward(**kwargs)
 
   else:
     raise ValueError(
@@ -260,6 +267,12 @@ def make_buffer(
     kwargs["distance_scale"] = load_pickle(pretrained_path,
                                            "distance_scale.pkl")
     buffer = replay_buffer.ReplayBufferDistanceToGoal(**kwargs)
+  
+  elif config.reward_wrapper.type == "holdr":
+    kwargs["subtask_means"] = load_pickle(pretrained_path, "subtask_means.pkl")
+    kwargs["distance_scale"] = load_pickle(pretrained_path,
+                                           "distance_scale.pkl")
+    buffer = replay_buffer.ReplayBufferHOLDR(**kwargs)
 
   else:
     raise ValueError(

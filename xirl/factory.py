@@ -97,6 +97,7 @@ TRAINERS = {
     "lifs": trainers.LIFSTrainer,
     "tcn": trainers.TCNTrainer,
     "goal_classifier": trainers.GoalFrameClassifierTrainer,
+    "holdr": trainers.HOLDRTrainer,
 }
 EVALUATORS = {
     "kendalls_tau": evaluators.KendallsTau,

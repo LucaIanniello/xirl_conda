@@ -46,12 +46,12 @@ def get_config():
   config.data = ml_collections.ConfigDict()
 
   # Set the relative path to the dataset folder (xmagical in the datasets repo)
-  config.data.root = "/tmp/xirl/datasets/xmagical"
+  config.data.root = "/home/lianniello/xirl_thesis/xirl_conda/new_env_dataset"
   # Absolute path to the dataset root.
   # The mini-batch size. Note this only specifies the number of videos to
   # load frames from in a single batch. The effective batch size is actually
   # larger since we sample multiple frame sequences per video.
-  config.data.batch_size = 4
+  config.data.batch_size = 4 #FOR HOLDR
   # Which action classes to select for creating the pretraining dataset. Leave
   # it empty to load all action classes.
   config.data.pretrain_action_class = ()
@@ -65,7 +65,7 @@ def get_config():
   # This controls how a video batch is created. If set to 'random', videos
   # are sampled randomly from different classes. If set to 'same_class', only
   # videos belonging to the same class folder are sampled within a batch.
-  config.data.pretraining_video_sampler = "random"
+  config.data.pretraining_video_sampler = "same_class"
 
   # ============================================== #
   # Frame sampling params.
@@ -78,7 +78,7 @@ def get_config():
   # This controls the type of sampling we perform on video frames.
   config.frame_sampler.strategy = "uniform"
   # The number of frames to sample per video.
-  config.frame_sampler.num_frames_per_sequence = 15
+  config.frame_sampler.num_frames_per_sequence = 20
   # The number of context frames to sample per frame. This is useful for
   # models that use 3D convolutions.
   config.frame_sampler.num_context_frames = 1
@@ -110,8 +110,6 @@ def get_config():
   # turn it on.
   config.data_augmentation.train_transforms = [
       "random_resized_crop",
-      "color_jitter",
-      "grayscale",
       "gaussian_blur",
       # "normalize",
   ]
@@ -166,7 +164,7 @@ def get_config():
   config.model = ml_collections.ConfigDict()
 
   config.model.model_type = "resnet18_linear"
-  config.model.embedding_size = 32
+  config.model.embedding_size = 64
   config.model.normalize_embeddings = False
   config.model.learnable_temp = False
 
@@ -179,7 +177,7 @@ def get_config():
   config.loss.tcc = ml_collections.ConfigDict()
   config.loss.tcc.stochastic_matching = False
   config.loss.tcc.loss_type = "regression_mse"
-  config.loss.tcc.cycle_length = 2
+  config.loss.tcc.cycle_length = 3
   config.loss.tcc.label_smoothing = 0.1
   config.loss.tcc.softmax_temperature = 0.1
   config.loss.tcc.normalize_indices = True
@@ -198,13 +196,19 @@ def get_config():
   ## LIFS loss.
   config.loss.lifs = ml_collections.ConfigDict()
   config.loss.lifs.temperature = 1.0
+  
+  ## HOLDR loss.
+  config.loss.holdr = ml_collections.ConfigDict()
+  config.loss.holdr.temperature = 0.1
+  
+  
 
   # ============================================== #
   # Optimizer params
   # ============================================== #
   config.optim = ml_collections.ConfigDict()
 
-  config.optim.train_max_iters = 4_000
+  config.optim.train_max_iters = 50000
   # L2 regularization.
   config.optim.weight_decay = 1e-4
   # Learning rate.

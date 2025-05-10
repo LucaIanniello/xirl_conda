@@ -104,6 +104,7 @@ def main(_):
   else:
     logging.info("No RNG seed has been set for this RL experiment.")
 
+ 
   # Load env.
   env = utils.make_env(
       FLAGS.env_name,
@@ -118,6 +119,12 @@ def main(_):
       frame_stack=config.frame_stack,
       save_dir=osp.join(exp_dir, "video", "eval"),
   )
+  
+  if config.reward_wrapper.pretrained_path:
+    print("Using learned reward wrapper.")
+    env = utils.wrap_learned_reward(env, FLAGS.config)
+    eval_env = utils.wrap_learned_reward(eval_env, FLAGS.config)
+
 
   # Dynamically set observation and action space values.
   config.sac.obs_dim = env.observation_space.shape[0]
@@ -149,6 +156,7 @@ def main(_):
   try:
     start = checkpoint_manager.restore_or_initialize()
     observation, done = env.reset(), False
+    
     for i in tqdm(range(start, config.num_train_steps), initial=start):
       if i < config.num_seed_steps:
         action = env.action_space.sample()
@@ -163,6 +171,7 @@ def main(_):
         mask = 0.0
 
       if not config.reward_wrapper.pretrained_path:
+        # print("No reward wrapper specified. Using default reward.")
         buffer.insert(observation, action, reward, next_observation, mask)
       else:
         buffer.insert(
@@ -177,6 +186,9 @@ def main(_):
 
       if done:
         observation, done = env.reset(), False
+        if config.reward_wrapper.pretrained_path:
+          buffer.reset_state()
+          env.reset_state()
         for k, v in info["episode"].items():
           logger.log_scalar(v, info["total"]["timesteps"], k, "training")
 
