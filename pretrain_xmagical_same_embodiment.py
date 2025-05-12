@@ -26,6 +26,8 @@ from configs.constants import EMBODIMENTS
 from torchkit.experiment import string_from_kwargs
 from torchkit.experiment import unique_id
 import yaml
+import torch
+
 
 # pylint: disable=logging-fstring-interpolation
 
@@ -51,6 +53,8 @@ flags.DEFINE_bool("unique_name", False,
 
 
 def main(_):
+  torch.cuda.empty_cache()
+
   embodiments = EMBODIMENTS if FLAGS.embodiment is None else [FLAGS.embodiment]
 
   for embodiment in embodiments:

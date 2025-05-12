@@ -30,6 +30,7 @@ from xirl import common
 from xirl.models import SelfSupervisedModel
 import pdb
 import matplotlib.pyplot as plt
+from xirl.wrappers import HOLDRLearnedVisualReward
 
 # pylint: disable=logging-fstring-interpolation
 
@@ -81,15 +82,40 @@ def main(_):
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
   model, downstream_loader = setup()
   model.to(device).eval()
-  goal_emb = utils.load_pickle(FLAGS.experiment_path, "goal_emb.pkl")
-  distance_scale = utils.load_pickle(FLAGS.experiment_path,
-                                          "distance_scale.pkl")
-  embs = embed(model, downstream_loader, device)
-  rews = []
-  for emb in embs:
-    dist = np.linalg.norm(emb - goal_emb)
-    dist = -1.0 * dist * distance_scale
-    rews.append(dist)
+  if "distance_to_goal" in FLAGS.experiment_path:
+    goal_emb = utils.load_pickle(FLAGS.experiment_path, "goal_emb.pkl")
+    distance_scale = utils.load_pickle(FLAGS.experiment_path,
+                                            "distance_scale.pkl")
+    embs = embed(model, downstream_loader, device)
+    rews = []
+    for emb in embs:
+      dist = np.linalg.norm(emb - goal_emb)
+      dist = -1.0 * dist * distance_scale
+      rews.append(dist)
+      
+  elif "holdr" in FLAGS.experiment_path:
+    subtask_means = utils.load_pickle(FLAGS.experiment_path, "subtask_means.pkl")
+    distance_scale = utils.load_pickle(FLAGS.experiment_path, "distance_scale.pkl")
+
+    reward_fn = HOLDRLearnedVisualReward(
+        subtask_means=subtask_means,
+        distance_scale=distance_scale,
+        model=model,
+    )
+    
+    rews = []
+    for class_name, class_loader in downstream_loader.items():
+        for batch in tqdm(iter(class_loader), leave=False):
+            video = batch["frames"].to(device)
+            video = video.cpu().numpy()  # Convert to numpy if needed for HOLDR input
+            reward_fn.reset_state()
+            for i in range(video.shape[0]):
+                frame = video[i]
+                reward = reward_fn._get_reward_from_image(frame)
+                rews.append(reward)
+            break  # Remove this if you want to evaluate all videos
+        break  # Same here
+
   # Save reward plot
   plt.figure()
   plt.plot(rews)

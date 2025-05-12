@@ -6,6 +6,7 @@ from gym import spaces
 import xmagical.entities as en 
 from xmagical.entities import EntityIndex
 from xmagical.base_env import BaseEnv
+import math
 
 
 DEFAULT_ROBOT_POSE = ((0.0, -0.6), 0.0)
@@ -21,7 +22,6 @@ DEFAULT_GOAL_XYHW = (-1.2, 1.16, 0.4, 2.4)
 # Max possible L2 distance (arena diagonal 2*sqrt(2)).
 D_MAX = 2.8284271247461903
 
-
 class SweepToTopEnv(BaseEnv):
     """Sweep 3 debris entities to the goal zone at the top of the arena."""
 
@@ -33,7 +33,6 @@ class SweepToTopEnv(BaseEnv):
         rand_layout_full: bool = False,
         rand_shapes: bool = False,
         rand_colors: bool = False,
-        colors_set: list = None,
         **kwargs,
     ) -> None:
         """Constructor.
@@ -50,8 +49,8 @@ class SweepToTopEnv(BaseEnv):
         super().__init__(**kwargs)
 
         self.use_state = True
-        # self.use_dense_reward = use_dense_reward
         self.use_dense_reward = False
+        # self.use_dense_reward = False
         self.use_color_reward = True
         self.rand_layout_full = rand_layout_full
         self.rand_shapes = rand_shapes
@@ -60,10 +59,8 @@ class SweepToTopEnv(BaseEnv):
         self.stage_completed = [False] * self.num_debris
         self.starting_position = [0] * self.num_debris
         self.actual_goal_stage = 0 #0 is red, 1 is blue, 2 is yellow
-        self.colors_set = colors_set
+        self.last_color_reward = 0
         
-        
-
         if self.use_state:
             # Redefine the observation space if we are using states as opposed
             # to pixels.
@@ -78,6 +75,37 @@ class SweepToTopEnv(BaseEnv):
             high = np.array([+1.0] * base_dim + [1.0] * goal_dim, dtype=np.float32)
 
             self.observation_space = spaces.Box(low, high, dtype=np.float32)
+            
+    def get_finger_peak_distance(self) -> float:
+        #Calculate the distance between the peaks of the two fingers.
+        finger_peaks = []
+        for finger_body, finger_side in zip(self._robot.finger_bodies, [-1, 1]):
+            # Calculate the peak position of the finger in world coordinates.
+            finger_angle = finger_body.angle
+            finger_length = self._robot.finger_upper_length + self._robot.finger_lower_length
+            peak_x = finger_body.position.x + finger_length * math.cos(finger_angle)
+            peak_y = finger_body.position.y + finger_length * math.sin(finger_angle)
+            finger_peaks.append((peak_x, peak_y))
+        
+        # Compute the Euclidean distance between the two peaks.
+        peak1, peak2 = finger_peaks
+        distance = math.sqrt((peak2[0] - peak1[0]) ** 2 + (peak2[1] - peak1[1]) ** 2)
+        return distance
+
+    def is_block_gripped(self, block_x, block_y) -> bool:
+        #Check if the block is likely gripped by the robot fingers.
+        lf_pos = np.array(self._robot.finger_bodies[0].position)
+        rf_pos = np.array(self._robot.finger_bodies[1].position)
+        pinch_center = (lf_pos + rf_pos) / 2.0
+        grip_width = self.get_finger_peak_distance()
+
+        block_pos = np.array([block_x, block_y])
+        dist_to_center = np.linalg.norm(block_pos - pinch_center)
+
+        # Conditions for a 'grip'
+        is_near_center = dist_to_center < 0.4
+        is_gripper_closed = grip_width < 0.28 
+        return is_near_center and is_gripper_closed
 
     def on_reset(self) -> None:
         robot_pos, robot_angle = DEFAULT_ROBOT_POSE
@@ -154,10 +182,9 @@ class SweepToTopEnv(BaseEnv):
         #     replace=False,
         # )
         debris_shapes = [DEFAULT_BLOCK_SHAPE] * self.num_debris
-        
-        #self.rng.shuffle(colors_set)
-        debris_colors = self.colors_set
-        
+        colors_set = [en.ShapeColor.RED, en.ShapeColor.BLUE, en.ShapeColor.YELLOW]
+        self.rng.shuffle(colors_set)
+        debris_colors = colors_set[: self.num_debris]
         # if self.rand_shapes:
         #     debris_shapes = self.rng.choice(
         #         en.SHAPE_TYPES, size=self.num_debris
@@ -181,7 +208,6 @@ class SweepToTopEnv(BaseEnv):
                 debris_colors,
             )
         ]
-        
         self.add_entities(self.__debris_shapes)
 
         # Add robot last for draw order reasons.
@@ -192,6 +218,7 @@ class SweepToTopEnv(BaseEnv):
         
         self.stage_completed = [False] * self.num_debris
         self.actual_goal_stage = 0
+        self.last_color_reward = 0
         
 
     def get_state(self) -> np.ndarray:
@@ -310,34 +337,47 @@ class SweepToTopEnv(BaseEnv):
 
         # Calculate distances for each block
         distances = {color: calculate_distances(blocks[color], starting_positions[color]) for color in blocks}
-
+    
         # Reward calculation
         moving_to_block_reward = 0
         push_reward = 0
+        grip_reward = 0
         
         if not self.stage_completed[0]:
             # Reward for moving the robot near the red block
             moving_to_block_reward += (1.0 / (1.0 + distances["red"][3]))
             push_reward += (distances["red"][4] - distances["red"][2]) / distances["red"][4]
+            red_block_x, red_block_y = blocks["red"].shape_body.position
+            grip_reward = 1.0 if self.is_block_gripped(red_block_x, red_block_y) else 0.0
             if in_goal(distances["red"][1]):
                 self.stage_completed[0] = True
                 self.actual_goal_stage = 1
-        elif not self.stage_completed[1]:
+        elif not self.stage_completed[1] and in_goal(distances["red"][1]):
             # Reward for moving the robot near the blue block
-            moving_to_block_reward += 1.0 + 1.0 / (1.0 + distances["blue"][3])
-            push_reward += 1.0 + (distances["blue"][4] - distances["blue"][2]) / distances["blue"][4]
+            moving_to_block_reward += 1.2 + 1.0 / (1.0 + distances["blue"][3])
+            push_reward += 1.2 + (distances["blue"][4] - distances["blue"][2]) / distances["blue"][4]
+            blue_block_x, blue_block_y = blocks["blue"].shape_body.position
+            grip_reward = 1.5 if self.is_block_gripped(blue_block_x, blue_block_y) else 0.0
             if in_goal(distances["blue"][1]):
                 self.stage_completed[1] = True
                 self.actual_goal_stage = 2
-        elif not self.stage_completed[2]:
+        elif not self.stage_completed[2] and in_goal(distances["blue"][1]) and in_goal(distances["red"][1]):
             # Reward for moving the robot near the yellow block
-            moving_to_block_reward += 2.0 + 1.0 / (1.0 + distances["yellow"][3])
-            push_reward += 2.0 + (distances["yellow"][4] - distances["yellow"][2]) / distances["yellow"][4]
+            moving_to_block_reward += 2.4 + 1.0 / (1.0 + distances["yellow"][3])
+            push_reward += 2.4 + (distances["yellow"][4] - distances["yellow"][2]) / distances["yellow"][4]
+            yellow_block_x, yellow_block_y = blocks["yellow"].shape_body.position
+            grip_reward = 2 if self.is_block_gripped(yellow_block_x, yellow_block_y) else 0.0
             if in_goal(distances["yellow"][1]):
                 self.stage_completed[2] = True
-
-
-        reward = 0.3 * moving_to_block_reward + 0.7 * push_reward
+            else:
+                self.last_color_reward = 0.3 * moving_to_block_reward + 0.5 * push_reward + 0.2* grip_reward
+        reward = 0.3 * moving_to_block_reward + 0.5 * push_reward + 0.2* grip_reward
+        
+        if self.stage_completed[0] and self.stage_completed[1] and self.stage_completed[2]:
+            # All blocks are in the goal area
+            # To keep the final reward at the higher value possible without falling to zero
+            reward = 2* self.last_color_reward 
+ 
         return reward
             
         

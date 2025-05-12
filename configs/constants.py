@@ -47,7 +47,7 @@ XMAGICALTrainingIterations = FrozenConfigDict({
     "longstick": 75_000,
     "mediumstick": 250_000,
     "shortstick": 500_000,
-    "gripper": 500_000,
+    "gripper": 1_500_000,
 })
 
 # A mapping from RLV environment to RL training iterations.

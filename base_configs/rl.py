@@ -51,19 +51,19 @@ def get_config():
 
   config.reward_wrapper = ml_collections.ConfigDict()
   config.reward_wrapper.pretrained_path = ""
-  # Can be one of ['distance_to_goal', 'goal_classifier'].
-  config.reward_wrapper.type = "holdr"
+  # Can be one of ['distance_to_goal', 'goal_classifier', holdr].
+  config.reward_wrapper.type = "distance_to_goal"
 
   # ================================================= #
   # Training parameters.
   # ================================================= #
-  config.num_train_steps = 5_000
+  config.num_train_steps = 1_500_000
   config.replay_buffer_capacity = 1_000_000
-  config.num_seed_steps = 5_000
+  config.num_seed_steps = 10_000
   config.num_eval_episodes = 150
-  config.eval_frequency = 10_000
+  config.eval_frequency = 20_000
   config.checkpoint_frequency = 200_000
-  config.log_frequency = 10_000
+  config.log_frequency = 20_000
   config.save_video = True
 
   # ================================================= #
