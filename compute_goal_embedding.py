@@ -152,7 +152,7 @@ def main(_):
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
   model, downstream_loader = setup()
   model.to(device).eval()
-  subgoal_file_path = "/home/lianniello/xirl_thesis/xirl_conda/new_env_dataset/subgoal_frames.json"
+  subgoal_file_path = "/home/lianniello/subtask_sweepToTop_dataset/subgoal_frames.json"
   subgoal_data = read_subgoal_from_file(subgoal_file_path)
 
   if "holdr_embodiment" in FLAGS.experiment_path:

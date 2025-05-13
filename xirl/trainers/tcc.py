@@ -59,12 +59,10 @@ class TCCTrainer(Trainer):
   ):
     steps = batch["frame_idxs"].to(self._device)
     seq_lens = batch["video_len"].to(self._device)
-    pdb.set_trace()
     # Dynamically determine the number of cycles if using stochastic
     # matching.
     batch_size, num_cc_frames = embs.shape[:2]
     num_cycles = int(batch_size * num_cc_frames)
-    print(batch['frames'].shape)
 
     return compute_tcc_loss(
         embs=embs,

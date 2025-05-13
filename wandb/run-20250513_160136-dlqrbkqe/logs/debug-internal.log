@@ -1,0 +1,7 @@
+{"time":"2025-05-13T16:01:36.852559031+02:00","level":"INFO","msg":"stream: starting","core version":"0.19.11","symlink path":"/home/lianniello/xirl_thesis/xirl_conda/wandb/run-20250513_160136-dlqrbkqe/logs/debug-core.log"}
+{"time":"2025-05-13T16:01:37.142613418+02:00","level":"INFO","msg":"created new stream","id":"dlqrbkqe"}
+{"time":"2025-05-13T16:01:37.142802625+02:00","level":"INFO","msg":"stream: started","id":"dlqrbkqe"}
+{"time":"2025-05-13T16:01:37.142813063+02:00","level":"INFO","msg":"handler: started","stream_id":"dlqrbkqe"}
+{"time":"2025-05-13T16:01:37.142818764+02:00","level":"INFO","msg":"sender: started","stream_id":"dlqrbkqe"}
+{"time":"2025-05-13T16:01:37.142828756+02:00","level":"INFO","msg":"writer: Do: started","stream_id":"dlqrbkqe"}
+{"time":"2025-05-13T16:01:37.398116093+02:00","level":"INFO","msg":"Starting system monitor"}

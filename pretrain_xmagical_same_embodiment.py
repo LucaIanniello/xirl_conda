@@ -50,10 +50,12 @@ flags.DEFINE_enum(
     "Which embodiment to train. Will train all sequentially if not specified.")
 flags.DEFINE_bool("unique_name", False,
                   "Whether to append a unique ID to the experiment name.")
+flags.DEFINE_string("device", "cuda:0", "The compute device.")
+flags.DEFINE_boolean(
+    "wandb", False, "Whether to log on W&B. Note: this is not supported yet.")
 
 
 def main(_):
-  torch.cuda.empty_cache()
 
   embodiments = EMBODIMENTS if FLAGS.embodiment is None else [FLAGS.embodiment]
 
@@ -85,6 +87,10 @@ def main(_):
             f"({repr(embodiment)},)",
             "--config.data.max_vids_per_class",
             f"{MAX_DEMONSTRATIONS}",
+            "--device",
+            f"{FLAGS.device}",
+            "--wandb",
+            f"{FLAGS.wandb}",
         ],
         check=True,
     )

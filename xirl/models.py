@@ -349,3 +349,99 @@ class Resnet18LinearEncoderAutoEncoderNet(ResNet):
     else:
       out = self.forward(x).cpu()
     return out.squeeze(0)
+
+import torch
+import torch.nn as nn
+from typing import Dict, Optional
+
+class Bottleneck(nn.Module):
+    expansion = 4
+
+    def __init__(self, in_planes, planes, stride=1, downsample=None, zero_init_bn=False):
+        super().__init__()
+        self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(planes)
+
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride,
+                               padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(planes)
+
+        self.conv3 = nn.Conv2d(planes, planes * self.expansion, kernel_size=1, bias=False)
+        self.bn3 = nn.BatchNorm2d(planes * self.expansion)
+
+        if zero_init_bn:
+            nn.init.zeros_(self.bn3.weight)
+
+        self.downsample = downsample
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        identity = x
+
+        out = self.relu(self.bn1(self.conv1(x)))
+        out = self.relu(self.bn2(self.conv2(out)))
+        out = self.bn3(self.conv3(out))
+
+        if self.downsample:
+            identity = self.downsample(x)
+
+        out += identity
+        out = self.relu(out)
+        return out
+
+
+class ResNet50(nn.Module):
+    def __init__(self, num_classes: Optional[int] = None):
+        super().__init__()
+        self.in_planes = 64
+        self.num_classes = num_classes
+
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        self.bn1 = nn.BatchNorm2d(64)
+        self.relu = nn.ReLU(inplace=True)
+        self.maxpool = nn.MaxPool2d(3, stride=2, padding=1)
+
+        self.layer1 = self._make_layer(64, 3)
+        self.layer2 = self._make_layer(128, 4, stride=2)
+        self.layer3 = self._make_layer(256, 6, stride=2)
+        self.layer4 = self._make_layer(512, 3, stride=2)
+
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        self.pre_logits = nn.Identity()
+        if num_classes is not None:
+            self.fc = nn.Linear(512 * Bottleneck.expansion, num_classes)
+
+    def _make_layer(self, planes, blocks, stride=1):
+        downsample = None
+        if stride != 1 or self.in_planes != planes * Bottleneck.expansion:
+            downsample = nn.Sequential(
+                nn.Conv2d(self.in_planes, planes * Bottleneck.expansion,
+                          kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(planes * Bottleneck.expansion),
+            )
+
+        layers = [Bottleneck(self.in_planes, planes, stride, downsample, zero_init_bn=True)]
+        self.in_planes = planes * Bottleneck.expansion
+        for _ in range(1, blocks):
+            layers.append(Bottleneck(self.in_planes, planes))
+
+        return nn.Sequential(*layers)
+
+    def forward(self, x) -> Dict[str, torch.Tensor]:
+        x = self.relu(self.bn1(self.conv1(x)))
+        x = self.maxpool(x)
+
+        features = {}
+        x = self.layer1(x); features["stage_1"] = x
+        x = self.layer2(x); features["stage_2"] = x
+        x = self.layer3(x); features["stage_3"] = x
+        x = self.layer4(x); features["stage_4"] = x
+
+        if self.num_classes is not None:
+            x = self.avgpool(x)
+            x = torch.flatten(x, 1)
+            x = self.pre_logits(x)
+            x = self.fc(x)
+            return {"logits": x}
+        else:
+            return features

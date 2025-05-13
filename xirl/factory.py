@@ -91,6 +91,7 @@ MODELS = {
     "resnet18_classifier": models.GoalClassifier,
     "resnet18_features": models.Resnet18RawImageNetFeaturesNet,
     "resnet18_linear_ae": models.Resnet18LinearEncoderAutoEncoderNet,
+    "resnet50_linear": models.ResNet50,
 }
 TRAINERS = {
     "tcc": trainers.TCCTrainer,

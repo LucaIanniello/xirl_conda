@@ -29,6 +29,7 @@ from torchkit import Logger
 from torchkit.utils.py_utils import Stopwatch
 from utils import setup_experiment
 from xirl import common
+import wandb
 
 # pylint: disable=logging-fstring-interpolation
 
@@ -38,6 +39,7 @@ flags.DEFINE_string("experiment_name", None, "Experiment name.")
 flags.DEFINE_boolean("resume", False, "Whether to resume training.")
 flags.DEFINE_string("device", "cuda:0", "The compute device.")
 flags.DEFINE_boolean("raw_imagenet", False, "")
+flags.DEFINE_boolean("wandb", False, "Log on W&B.")
 
 config_flags.DEFINE_config_file(
     "config",
@@ -60,6 +62,13 @@ def main(_):
   # ImageNet baseline.
   if FLAGS.raw_imagenet:
     return
+  
+  
+  if FLAGS.wandb:
+    wandb.init(project="XIRL", group=FLAGS.experiment_name, name=FLAGS.experiment_name, mode="online")
+    wandb.config.update(FLAGS)
+    wandb.run.log_code(".")
+    wandb.config.update(config.to_dict(), allow_val_change=True)
 
   # Setup compute device.
   if torch.cuda.is_available():
@@ -136,6 +145,17 @@ def main(_):
                   eval_name,
                   f"downstream/{split}",
               )
+              
+              if eval_name == "kendalls_tau":
+                kendalls_tau = eval_out.scalar
+                if FLAGS.wandb:
+                  wandb.log({
+                      "kendalls_tau": kendalls_tau,
+                      "step": global_step,
+                      "epoch": epoch,
+                  })
+              
+          
 
         # Save model checkpoint.
         if not global_step % config.checkpointing_frequency:
@@ -156,6 +176,17 @@ def main(_):
                 time_per_iter,
                 train_loss["train/total_loss"].item(),
             ))
+        if FLAGS.wandb:
+          wandb.log({
+              "train/total_loss": train_loss["train/total_loss"].item(),
+              "step": global_step,
+              "epoch": epoch,
+          })
+          wandb.log({
+            "evaluation loss": valid_loss["valid/total_loss"].item(),
+            "step": global_step,
+            "epoch": epoch,
+          })
         stopwatch.reset()
       epoch += 1
 

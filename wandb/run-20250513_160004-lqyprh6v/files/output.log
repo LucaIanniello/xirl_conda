@@ -1,0 +1,47 @@
+I0513 16:00:05.326834 125098736580416 pretrain.py:79] Using device: cuda:0
+I0513 16:00:05.327615 125098736580416 pretrain.py:83] Pretraining experiment seed: 1
+I0513 16:00:52.189532 125098736580416 pretrain.py:171] Iter[1/10000] (Epoch 0), 42.791382s/iter, Loss: 0.083
+I0513 16:00:52.785156 125098736580416 pretrain.py:171] Iter[2/10000] (Epoch 0), 0.211190s/iter, Loss: 0.084
+I0513 16:00:53.387774 125098736580416 pretrain.py:171] Iter[3/10000] (Epoch 0), 0.208856s/iter, Loss: 0.086
+I0513 16:00:53.975354 125098736580416 pretrain.py:171] Iter[4/10000] (Epoch 0), 0.208463s/iter, Loss: 0.083
+I0513 16:00:54.563293 125098736580416 pretrain.py:171] Iter[5/10000] (Epoch 0), 0.206270s/iter, Loss: 0.087
+I0513 16:00:55.146511 125098736580416 pretrain.py:171] Iter[6/10000] (Epoch 0), 0.207623s/iter, Loss: 0.085
+I0513 16:00:55.747388 125098736580416 pretrain.py:171] Iter[7/10000] (Epoch 0), 0.223695s/iter, Loss: 0.079
+I0513 16:00:56.333793 125098736580416 pretrain.py:171] Iter[8/10000] (Epoch 0), 0.205350s/iter, Loss: 0.084
+I0513 16:00:56.917255 125098736580416 pretrain.py:171] Iter[9/10000] (Epoch 0), 0.207377s/iter, Loss: 0.087
+I0513 16:00:57.502894 125098736580416 pretrain.py:171] Iter[10/10000] (Epoch 0), 0.207757s/iter, Loss: 0.085
+I0513 16:00:58.096297 125098736580416 pretrain.py:171] Iter[11/10000] (Epoch 0), 0.207927s/iter, Loss: 0.085
+I0513 16:00:58.680902 125098736580416 pretrain.py:171] Iter[12/10000] (Epoch 0), 0.208581s/iter, Loss: 0.085
+I0513 16:00:59.261638 125098736580416 pretrain.py:171] Iter[13/10000] (Epoch 0), 0.206796s/iter, Loss: 0.089
+I0513 16:00:59.848763 125098736580416 pretrain.py:171] Iter[14/10000] (Epoch 0), 0.212068s/iter, Loss: 0.079
+I0513 16:01:00.432455 125098736580416 pretrain.py:171] Iter[15/10000] (Epoch 0), 0.208856s/iter, Loss: 0.094
+I0513 16:01:01.020993 125098736580416 pretrain.py:171] Iter[16/10000] (Epoch 0), 0.212386s/iter, Loss: 0.085
+I0513 16:01:01.613029 125098736580416 pretrain.py:171] Iter[17/10000] (Epoch 0), 0.207977s/iter, Loss: 0.078
+I0513 16:01:02.197311 125098736580416 pretrain.py:171] Iter[18/10000] (Epoch 0), 0.207134s/iter, Loss: 0.080
+I0513 16:01:02.780797 125098736580416 pretrain.py:171] Iter[19/10000] (Epoch 0), 0.211691s/iter, Loss: 0.084
+I0513 16:01:03.369926 125098736580416 pretrain.py:171] Iter[20/10000] (Epoch 0), 0.208716s/iter, Loss: 0.082
+I0513 16:01:03.952393 125098736580416 pretrain.py:171] Iter[21/10000] (Epoch 0), 0.207675s/iter, Loss: 0.083
+I0513 16:01:04.538329 125098736580416 pretrain.py:171] Iter[22/10000] (Epoch 0), 0.208928s/iter, Loss: 0.084
+I0513 16:01:05.130850 125098736580416 pretrain.py:171] Iter[23/10000] (Epoch 0), 0.207892s/iter, Loss: 0.081
+Exception in thread Thread-4:
+Traceback (most recent call last):
+  File "/home/lianniello/miniconda3/envs/xirl/lib/python3.8/threading.py", line 932, in _bootstrap_inner
+    self.run()
+  File "/home/lianniello/miniconda3/envs/xirl/lib/python3.8/threading.py", line 870, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/lianniello/miniconda3/envs/xirl/lib/python3.8/site-packages/torch/utils/data/_utils/pin_memory.py", line 25, in _pin_memory_loop
+    r = in_queue.get(timeout=MP_STATUS_CHECK_INTERVAL)
+  File "/home/lianniello/miniconda3/envs/xirl/lib/python3.8/multiprocessing/queues.py", line 116, in get
+    return _ForkingPickler.loads(res)
+  File "/home/lianniello/miniconda3/envs/xirl/lib/python3.8/site-packages/torch/multiprocessing/reductions.py", line 282, in rebuild_storage_fd
+    fd = df.detach()
+  File "/home/lianniello/miniconda3/envs/xirl/lib/python3.8/multiprocessing/resource_sharer.py", line 57, in detach
+    with _resource_sharer.get_connection(self._id) as conn:
+  File "/home/lianniello/miniconda3/envs/xirl/lib/python3.8/multiprocessing/resource_sharer.py", line 87, in get_connection
+    c = Client(address, authkey=process.current_process().authkey)
+  File "/home/lianniello/miniconda3/envs/xirl/lib/python3.8/multiprocessing/connection.py", line 502, in Client
+    c = SocketClient(address)
+  File "/home/lianniello/miniconda3/envs/xirl/lib/python3.8/multiprocessing/connection.py", line 630, in SocketClient
+    s.connect(address)
+FileNotFoundError: [Errno 2] No such file or directory
+I0513 16:01:05.754858 125098736580416 pretrain.py:194] Caught keyboard interrupt. Saving model before quitting.

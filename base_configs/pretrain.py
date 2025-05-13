@@ -49,12 +49,12 @@ def get_config():
   #INITIAL DATASET
   config.data.root = "/tmp/xirl/xirl_dataset/xmagical"
   #SUBTASK DATASET
-  #config.data.root = "/home/lianniello/subtask_sweepToTop_dataset"
+  #config.data.root = "/home/lianniello/subtask_sweepToTop_dataset/frames"
   # Absolute path to the dataset root.
   # The mini-batch size. Note this only specifies the number of videos to
   # load frames from in a single batch. The effective batch size is actually
   # larger since we sample multiple frame sequences per video.
-  config.data.batch_size = 4 
+  config.data.batch_size = 2
   # Which action classes to select for creating the pretraining dataset. Leave
   # it empty to load all action classes.
   config.data.pretrain_action_class = ()
@@ -167,6 +167,8 @@ def get_config():
   config.model = ml_collections.ConfigDict()
 
   config.model.model_type = "resnet18_linear"
+  ##TO BE CHANGED FOR HOLDR ARCHITECTURE
+  #config.model.model_type = "resnet50_linear"
   config.model.embedding_size = 64
   config.model.normalize_embeddings = False
   config.model.learnable_temp = False
@@ -211,7 +213,7 @@ def get_config():
   # ============================================== #
   config.optim = ml_collections.ConfigDict()
 
-  config.optim.train_max_iters = 50_000
+  config.optim.train_max_iters = 10_000
   # L2 regularization.
   config.optim.weight_decay = 1e-4
   # Learning rate.

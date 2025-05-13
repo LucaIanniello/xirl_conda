@@ -7,11 +7,13 @@ def get_config():
   config = _get_config()
 
   config.algorithm = "holdr"
-  config.optim.train_max_iters = 50_000
+  config.optim.train_max_iters = 10_000
   config.frame_sampler.strategy = "uniform"
   config.frame_sampler.uniform_sampler.offset = 0
   config.frame_sampler.num_frames_per_sequence = 40
   config.model.model_type = "resnet18_linear"
+  ##TO BE CHANGED FOR HOLDR ARCHITECTURE
+  #config.model.model_type = "resnet50_linear"
   config.model.embedding_size = 32
   config.model.normalize_embeddings = False
   config.model.learnable_temp = False
