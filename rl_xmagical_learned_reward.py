@@ -32,6 +32,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string("pretrained_path", None, "Path to pretraining experiment.")
 flags.DEFINE_list("seeds", [0, 5], "List specifying the range of seeds to run.")
 flags.DEFINE_string("device", "cuda:0", "The compute device.")
+flags.DEFINE_boolean("wandb", False, "Log on W&B.")
 
 
 def main(_):
@@ -80,6 +81,8 @@ def main(_):
             f"{seed}",
             "--device",
             f"{FLAGS.device}",
+            "--wandb",
+            f"{FLAGS.wandb}",
         ]))
 
   # Wait for each seed to terminate.

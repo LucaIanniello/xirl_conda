@@ -153,10 +153,8 @@ def main(_):
                       "kendalls_tau": kendalls_tau,
                       "step": global_step,
                       "epoch": epoch,
-                  })
+                  }, step=global_step)
               
-          
-
         # Save model checkpoint.
         if not global_step % config.checkpointing_frequency:
           checkpoint_manager.save(global_step)
@@ -181,12 +179,12 @@ def main(_):
               "train/total_loss": train_loss["train/total_loss"].item(),
               "step": global_step,
               "epoch": epoch,
-          })
+          }, step=global_step)
           wandb.log({
             "evaluation loss": valid_loss["valid/total_loss"].item(),
             "step": global_step,
             "epoch": epoch,
-          })
+          }, step=global_step)
         stopwatch.reset()
       epoch += 1
 

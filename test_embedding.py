@@ -30,7 +30,7 @@ from xirl import common
 from xirl.models import SelfSupervisedModel
 import pdb
 import matplotlib.pyplot as plt
-from xirl.wrappers import HOLDRLearnedVisualReward
+from sac.wrappers import HOLDRLearnedVisualReward
 
 # pylint: disable=logging-fstring-interpolation
 
@@ -82,18 +82,21 @@ def main(_):
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
   model, downstream_loader = setup()
   model.to(device).eval()
-  if "distance_to_goal" in FLAGS.experiment_path:
+  rews = []
+  if "xirl" in FLAGS.experiment_path:
+    print("Using distance to goal reward function")
     goal_emb = utils.load_pickle(FLAGS.experiment_path, "goal_emb.pkl")
     distance_scale = utils.load_pickle(FLAGS.experiment_path,
                                             "distance_scale.pkl")
     embs = embed(model, downstream_loader, device)
-    rews = []
+  
     for emb in embs:
       dist = np.linalg.norm(emb - goal_emb)
       dist = -1.0 * dist * distance_scale
       rews.append(dist)
       
   elif "holdr" in FLAGS.experiment_path:
+    print("Using HOLDR reward function")
     subtask_means = utils.load_pickle(FLAGS.experiment_path, "subtask_means.pkl")
     distance_scale = utils.load_pickle(FLAGS.experiment_path, "distance_scale.pkl")
 
@@ -103,7 +106,6 @@ def main(_):
         model=model,
     )
     
-    rews = []
     for class_name, class_loader in downstream_loader.items():
         for batch in tqdm(iter(class_loader), leave=False):
             video = batch["frames"].to(device)
@@ -125,7 +127,7 @@ def main(_):
   plt.grid(True)
 
   # Save the plot instead of showing it
-  save_path = os.path.join("/home/lianniello/xirl_thesis/xirl_conda/", "reward_plot_holdr_10000.png")
+  save_path = os.path.join("/home/lianniello/xirl_thesis/xirl_conda/", "reward_plot_xirl_default.png")
   plt.savefig(save_path, bbox_inches='tight')
   print(f"Saved reward plot to: {save_path}")
   plt.close()

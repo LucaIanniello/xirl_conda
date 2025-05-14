@@ -153,9 +153,9 @@ def main(_):
   model, downstream_loader = setup()
   model.to(device).eval()
   subgoal_file_path = "/home/lianniello/subtask_sweepToTop_dataset/subgoal_frames.json"
-  subgoal_data = read_subgoal_from_file(subgoal_file_path)
-
+  
   if "holdr_embodiment" in FLAGS.experiment_path:
+    subgoal_data = read_subgoal_from_file(subgoal_file_path)
     subtask_means, distance_scale = embed_subtasks(model, downstream_loader, device, subgoal_data)
     utils.save_pickle(FLAGS.experiment_path, subtask_means, "subtask_means.pkl")
     utils.save_pickle(FLAGS.experiment_path, distance_scale, "distance_scale.pkl")

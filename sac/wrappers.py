@@ -309,7 +309,7 @@ class DistanceToGoalLearnedVisualReward(LearnedVisualReward):
 
   def _get_reward_from_image(self, image):
     """Forward the pixels through the model and compute the reward."""
-    #print("Computing reward from image dist.")
+    # print("Computing reward from image dist.")
     image_tensor = self._to_tensor(image)
     emb = self._model.infer(image_tensor).numpy().embs
     dist = -1.0 * np.linalg.norm(emb - self._goal_emb)

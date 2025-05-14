@@ -57,7 +57,7 @@ def get_config():
   # ================================================= #
   # Training parameters.
   # ================================================= #
-  config.num_train_steps = 1_500_000
+  config.num_train_steps = 1_000_000
   config.replay_buffer_capacity = 1_000_000
   config.num_seed_steps = 10_000
   config.num_eval_episodes = 150

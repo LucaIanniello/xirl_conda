@@ -34,6 +34,7 @@ from torchkit import experiment
 from torchkit import Logger
 from tqdm.auto import tqdm
 import utils
+import wandb
 
 # pylint: disable=logging-fstring-interpolation
 
@@ -44,6 +45,7 @@ flags.DEFINE_string("env_name", None, "The environment name.")
 flags.DEFINE_integer("seed", 0, "RNG seed.")
 flags.DEFINE_string("device", "cuda:0", "The compute device.")
 flags.DEFINE_boolean("resume", False, "Resume experiment from last checkpoint.")
+flags.DEFINE_boolean("wandb", False, "Log on W&B.")
 
 config_flags.DEFINE_config_file(
     "config",
@@ -58,20 +60,24 @@ def evaluate(
     num_episodes,
 ):
   """Evaluate the policy and dump rollout videos to disk."""
+  episode_rewards = []
   policy.eval()
   stats = collections.defaultdict(list)
   for _ in range(num_episodes):
     observation, done = env.reset(), False
+    episode_reward = 0
     while not done:
       action = policy.act(observation, sample=False)
-      observation, _, done, info = env.step(action)
+      observation, reward, done, info = env.step(action)
+      episode_reward += reward
     for k, v in info["episode"].items():
       stats[k].append(v)
     if "eval_score" in info:
       stats["eval_score"].append(info["eval_score"])
+    episode_rewards.append(episode_reward)
   for k, v in stats.items():
     stats[k] = np.mean(v)
-  return stats
+  return stats, episode_rewards
 
 
 @experiment.pdb_fallback
@@ -87,6 +93,12 @@ def main(_):
       str(FLAGS.seed),
   )
   utils.setup_experiment(exp_dir, config, FLAGS.resume)
+  
+  if FLAGS.wandb:
+    wandb.init(project="XIRL", group="XIRL-EXPERIMENT1_b", name="XIRL-EXPERIMENT1_b", mode="online")
+    wandb.config.update(FLAGS)
+    wandb.run.log_code(".")
+    wandb.config.update(config.to_dict(), allow_val_change=True)
 
   # Setup compute device.
   if torch.cuda.is_available():
@@ -156,7 +168,7 @@ def main(_):
   try:
     start = checkpoint_manager.restore_or_initialize()
     observation, done = env.reset(), False
-    
+    episode_reward = 0
     for i in tqdm(range(start, config.num_train_steps), initial=start):
       if i < config.num_seed_steps:
         action = env.action_space.sample()
@@ -164,11 +176,17 @@ def main(_):
         policy.eval()
         action = policy.act(observation, sample=True)
       next_observation, reward, done, info = env.step(action)
-
+      episode_reward += reward
       if not done or "TimeLimit.truncated" in info:
         mask = 1.0
       else:
         mask = 0.0
+        
+      if FLAGS.wandb:
+        wandb.log({
+        "train/reward": reward,
+        "train/step": i,
+        }, step=i)
 
       if not config.reward_wrapper.pretrained_path:
         # print("No reward wrapper specified. Using default reward.")
@@ -186,11 +204,24 @@ def main(_):
 
       if done:
         observation, done = env.reset(), False
-        if config.reward_wrapper.pretrained_path:
+        if "holdr" in config.reward_wrapper.pretrained_path:
           buffer.reset_state()
           env.reset_state()
+
         for k, v in info["episode"].items():
           logger.log_scalar(v, info["total"]["timesteps"], k, "training")
+          if FLAGS.wandb:
+            wandb.log({
+                f"train/{k}": v,
+                "train/step": i,
+            }, step=i)
+        if FLAGS.wandb:
+            wandb.log({
+                "train/episode_reward": episode_reward,
+                "train/step": i,
+            }, step=i)
+        episode_reward = 0
+        
 
       if i >= config.num_seed_steps:
         policy.train()
@@ -199,10 +230,20 @@ def main(_):
         if (i + 1) % config.log_frequency == 0:
           for k, v in train_info.items():
             logger.log_scalar(v, info["total"]["timesteps"], k, "training")
+            if FLAGS.wandb:
+              wandb.log({
+                  f"train/{k}": v,
+                  "train/step": i,
+              }, step=i)
+          if FLAGS.wandb:
+            wandb.log({
+              "train/episode_reward": episode_reward,
+                "train/step": i,
+            }, step=i)
           logger.flush()
 
       if (i + 1) % config.eval_frequency == 0:
-        eval_stats = evaluate(policy, eval_env, config.num_eval_episodes)
+        eval_stats, episode_rewards = evaluate(policy, eval_env, config.num_eval_episodes)
         for k, v in eval_stats.items():
           logger.log_scalar(
               v,
@@ -210,6 +251,16 @@ def main(_):
               f"average_{k}s",
               "evaluation",
           )
+          if FLAGS.wandb:
+            wandb.log({
+                f"eval/{k}": v,
+                "train/step": i,
+            }, step=i)
+          if FLAGS.wandb:
+            wandb.log({
+                "eval/episode_reward": episode_rewards,
+                "train/step": i,
+            }, step=i)
         logger.flush()
 
       if (i + 1) % config.checkpoint_frequency == 0:
