@@ -47,9 +47,9 @@ def get_config():
 
   # Set the relative path to the dataset folder (xmagical in the datasets repo)
   #INITIAL DATASET
-  config.data.root = "/tmp/xirl/xirl_dataset/xmagical"
+  #config.data.root = "/tmp/xirl/xirl_dataset/xmagical"
   #SUBTASK DATASET
-  #config.data.root = "/home/lianniello/subtask_sweepToTop_dataset/frames"
+  config.data.root = "/home/lianniello/subtask_sweepToTop_dataset/frames"
   # Absolute path to the dataset root.
   # The mini-batch size. Note this only specifies the number of videos to
   # load frames from in a single batch. The effective batch size is actually
@@ -168,7 +168,7 @@ def get_config():
 
   config.model.model_type = "resnet18_linear"
   ##TO BE CHANGED FOR HOLDR ARCHITECTURE
-  #config.model.model_type = "resnet50_linear"
+  # config.model.model_type = "resnet50_linear"
   config.model.embedding_size = 64
   config.model.normalize_embeddings = False
   config.model.learnable_temp = False

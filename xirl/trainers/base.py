@@ -53,7 +53,8 @@ class Trainer(abc.ABC):
     self._device = device
     self._config = config
 
-    self._model.to(self._device).train()
+    # self._model.to(self._device).train()
+    self._model.train()
 
   @abc.abstractmethod
   def compute_loss(
@@ -105,11 +106,14 @@ class Trainer(abc.ABC):
 
     # Forward pass to compute embeddings.
     frames = batch["frames"].to(self._device)
-    out = self._model(frames)
+    # out = self._model(frames)
+    out_dict = self._model(frames)
 
     # Compute losses.
-    loss = self.compute_loss(out.embs, batch)
-    aux_loss = self.compute_auxiliary_loss(out, batch)
+    # loss = self.compute_loss(out.embs, batch)
+    # aux_loss = self.compute_auxiliary_loss(out, batch)
+    loss = self.compute_loss(out_dict["embs"], batch)
+    aux_loss = self.compute_auxiliary_loss(out_dict, batch)
     total_loss = loss + aux_loss
 
     # Backwards pass + optimization step.
@@ -148,10 +152,12 @@ class Trainer(abc.ABC):
         break
 
       frames = batch["frames"].to(self._device)
-      out = self._model(frames)
-
-      val_base_loss += self.compute_loss(out.embs, batch)
-      val_aux_loss += self.compute_auxiliary_loss(out, batch)
+      # out = self._model(frames)
+      out_dict = self._model(frames)
+      # val_base_loss += self.compute_loss(out.embs, batch)
+      # val_aux_loss += self.compute_auxiliary_loss(out, batch)
+      val_base_loss += self.compute_loss(out_dict["embs"], batch)
+      val_aux_loss += self.compute_auxiliary_loss(out_dict, batch)
       it_ += 1
     val_base_loss /= it_
     val_aux_loss /= it_

@@ -32,7 +32,7 @@ from tensorboard.backend.event_processing import event_accumulator
 
 _PLOT_DIR = flags.DEFINE_string(
     "plot_dir",
-    "/home/lucaianniello/Thesis/XIRL/results/shortstick/plots/",
+    "/home/lianniello/xirl_thesis/xirl_conda/",
     "Directory wherein to store plots.")
 _MATPLOTLIB_SIZE = flags.DEFINE_integer(
     "size",
@@ -112,7 +112,7 @@ def cross_shortstick(savename):
   experiments = [
       Experiment(
           # Note: replace with an actual experiment path.
-          path="/home/lucaianniello/Thesis/XIRL/results/shortstick/2/",
+          path="/tmp/xirl/rl_runs/env_name=SweepToTop-Gripper-State-Allo-TestLayout-v0_reward=learned_reward_type=distance_to_goal_mode=same_algo=xirl_uid=beb120b3-be64-4585-b9d7-99f6c6b550e4/0/",
           # Note: You can customize the below attributes to your liking.
           name="XIRL",
           color="tab:red",
@@ -163,7 +163,7 @@ def cross_shortstick(savename):
 def main(_):
   os.makedirs(_PLOT_DIR.value, exist_ok=True)
   update_plotting_params(_MATPLOTLIB_SIZE.value)
-  cross_shortstick("shortstick_2")
+  cross_shortstick("experiment2")
 
 
 if __name__ == "__main__":

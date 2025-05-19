@@ -66,7 +66,8 @@ def embed(
   for class_name, class_loader in downstream_loader.items():
     logging.info("Embedding %s.", class_name)
     for batch in tqdm(iter(class_loader), leave=False):
-      out = model.infer(batch["frames"].to(device))
+      # out = model.infer(batch["frames"].to(device))
+      out = model.module.infer(batch["frames"].to(device))
       emb = out.numpy().embs
       init_embs.append(emb[0, :])
       goal_embs.append(emb[-1, :])
@@ -90,7 +91,8 @@ def embed_subtasks(
     for batch in tqdm(iter(class_loader), leave=False):
       video_id = batch["video_name"][0].split("/")[-1]
       subgoal_frames = subgoal_data[video_id]
-      out = model.infer(batch["frames"].to(device))
+      # out = model.infer(batch["frames"].to(device))
+      out = model.module.infer(batch["frames"].to(device))
       emb = out.numpy().embs
       init_embs.append(emb[0, :])
       video_subgoal_embs = []

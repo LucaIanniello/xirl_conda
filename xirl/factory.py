@@ -154,6 +154,8 @@ def model_from_config(config):
     kwargs["embedding_size"] = config.model.embedding_size
   elif config.model.model_type == "resnet18_linear_ae":
     kwargs["embedding_size"] = config.model.embedding_size
+  elif config.model.model_type == "resnet50_linear":
+    kwargs["embedding_size"] = config.model.embedding_size
   return MODELS[config.model.model_type](**kwargs)
 
 

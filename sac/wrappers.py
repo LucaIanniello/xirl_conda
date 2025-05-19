@@ -311,7 +311,8 @@ class DistanceToGoalLearnedVisualReward(LearnedVisualReward):
     """Forward the pixels through the model and compute the reward."""
     # print("Computing reward from image dist.")
     image_tensor = self._to_tensor(image)
-    emb = self._model.infer(image_tensor).numpy().embs
+    # emb = self._model.infer(image_tensor).numpy().embs
+    emb = self._model.module.infer(image_tensor).numpy().embs
     dist = -1.0 * np.linalg.norm(emb - self._goal_emb)
     dist *= self._distance_scale
     return dist
@@ -324,7 +325,8 @@ class GoalClassifierLearnedVisualReward(LearnedVisualReward):
     """Forward the pixels through the model and compute the reward."""
     print("Computing reward from image.")
     image_tensor = self._to_tensor(image)
-    prob = torch.sigmoid(self._model.infer(image_tensor).embs)
+    # prob = torch.sigmoid(self._model.infer(image_tensor).embs)
+    prob = torch.sigmoid(self._model.module.infer(image_tensor).embs)
     return prob.item()
 
 class HOLDRLearnedVisualReward(LearnedVisualReward):
@@ -379,7 +381,8 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
     def _get_reward_from_image(self, image):
         """Forward pixels through model, compute reward w.r.t. current subtask."""
         image_tensor = self._to_tensor(image)
-        emb = self._model.infer(image_tensor).numpy().embs  # Shape: (emb_dim,)
+        # emb = self._model.infer(image_tensor).numpy().embs  # Shape: (emb_dim,)
+        emb = self._model.module.infer(image_tensor).numpy().embs
         
         # Current subtask goal
         goal_emb = self._subtask_means[self._subtask]

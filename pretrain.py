@@ -63,9 +63,8 @@ def main(_):
   if FLAGS.raw_imagenet:
     return
   
-  
   if FLAGS.wandb:
-    wandb.init(project="XIRL", group=FLAGS.experiment_name, name=FLAGS.experiment_name, mode="online")
+    wandb.init(project="HOLDR", group=FLAGS.experiment_name, name=FLAGS.experiment_name, mode="online")
     wandb.config.update(FLAGS)
     wandb.run.log_code(".")
     wandb.config.update(config.to_dict(), allow_val_change=True)
@@ -97,6 +96,9 @@ def main(_):
       trainer,
       eval_manager,
   ) = common.get_factories(config, device)
+  
+  trainer.model = model
+
 
   # Create checkpoint manager.
   checkpoint_dir = osp.join(exp_dir, "checkpoints")

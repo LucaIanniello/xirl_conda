@@ -21,6 +21,7 @@ from ml_collections import ConfigDict
 import torch
 from xirl import factory
 from xirl.models import SelfSupervisedModel
+import logging
 
 DataLoadersDict = Dict[str, torch.utils.data.DataLoader]
 ModelType = SelfSupervisedModel
@@ -106,6 +107,15 @@ def get_factories(
   pretrain_loaders = get_pretraining_dataloaders(config, debug)
   downstream_loaders = get_downstream_dataloaders(config, debug)
   model = factory.model_from_config(config)
+  # Move model to one GPU first (e.g., cuda:0)
+  model = model.to(device)
+  print("Cuda device: ",torch.cuda.device_count())
+  print("Before DataParallel:", next(model.parameters()).device)
+  if torch.cuda.device_count() > 1:
+    logging.info("Using %d GPUs with DataParallel", torch.cuda.device_count())
+    model = torch.nn.DataParallel(model)
+  print("After DataParallel:", next(model.parameters()).device)
+
   optimizer = factory.optim_from_config(config, model)
   trainer = factory.trainer_from_config(config, model, optimizer, device)
   eval_manager = factory.evaluator_from_config(config)

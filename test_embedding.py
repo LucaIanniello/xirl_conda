@@ -56,7 +56,8 @@ def embed(
     logging.info("Embedding %s.", class_name)
     for batch in tqdm(iter(class_loader), leave=False):
       print(batch['video_name'])
-      out = model.infer(batch["frames"].to(device))
+      # out = model.infer(batch["frames"].to(device))
+      out = model.module.infer(batch["frames"].to(device))
       emb = out.numpy().embs
       break
     break   
@@ -115,8 +116,8 @@ def main(_):
                 frame = video[i]
                 reward = reward_fn._get_reward_from_image(frame)
                 rews.append(reward)
-            break  # Remove this if you want to evaluate all videos
-        break  # Same here
+            break
+        break
 
   # Save reward plot
   plt.figure()

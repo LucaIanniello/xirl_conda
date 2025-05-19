@@ -36,6 +36,7 @@ flags.DEFINE_boolean("wandb", False, "Log on W&B.")
 
 
 def main(_):
+  
   with open(os.path.join(FLAGS.pretrained_path, "metadata.yaml"), "r") as fp:
     kwargs = yaml.load(fp, Loader=yaml.FullLoader)
 

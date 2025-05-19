@@ -29,6 +29,8 @@ from torchvision.models.resnet import BasicBlock
 from torchvision.models.resnet import ResNet
 from torch.hub import load_state_dict_from_url
 
+from typing import Dict, Optional
+
 
 @dataclasses.dataclass
 class SelfSupervisedOutput:
@@ -109,7 +111,12 @@ class SelfSupervisedModel(abc.ABC, nn.Module):
       embs = logit_scale * embs
     embs = embs.view((batch_size, t, -1))
     feats = feats.view((batch_size, t, -1))
-    return SelfSupervisedOutput(frames=x, feats=feats, embs=embs)
+    # return SelfSupervisedOutput(frames=x, feats=feats, embs=embs)
+    return {
+        "frames": x,
+        "feats": feats,
+        "embs": embs,
+    }
 
   @torch.no_grad()
   def infer(
@@ -126,10 +133,13 @@ class SelfSupervisedModel(abc.ABC, nn.Module):
       out = []
       for i in range(math.ceil(x.shape[1] / effective_bs)):
         sub_frames = x[:, i * effective_bs:(i + 1) * effective_bs]
-        out.append(self.forward(sub_frames).cpu())
+        partial_out = SelfSupervisedOutput(**self.forward(sub_frames)).cpu()
+        # out.append(self.forward(sub_frames).cpu())
+        out.append(partial_out)
       out = SelfSupervisedOutput.merge(out)
     else:
-      out = self.forward(x).cpu()
+      # out = self.forward(x).cpu()
+      out = SelfSupervisedOutput(**self.forward(x)).cpu()
     return out.squeeze(0)
 
 
@@ -350,9 +360,7 @@ class Resnet18LinearEncoderAutoEncoderNet(ResNet):
       out = self.forward(x).cpu()
     return out.squeeze(0)
 
-import torch
-import torch.nn as nn
-from typing import Dict, Optional
+
 
 class Bottleneck(nn.Module):
     expansion = 4
@@ -390,11 +398,12 @@ class Bottleneck(nn.Module):
         return out
 
 
-class ResNet50(nn.Module):
+class ResNet50Net(nn.Module):
     def __init__(self, num_classes: Optional[int] = None):
         super().__init__()
         self.in_planes = 64
         self.num_classes = num_classes
+        print("ResNet50 initialized")
 
         self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
@@ -445,3 +454,52 @@ class ResNet50(nn.Module):
             return {"logits": x}
         else:
             return features
+
+class ResNet50(SelfSupervisedModel):
+    def __init__(self, embedding_size, num_ctx_frames, normalize_embeddings, learnable_temp):
+        super().__init__(
+            num_ctx_frames=num_ctx_frames,
+            normalize_embeddings=normalize_embeddings,
+            learnable_temp=learnable_temp,
+        )
+
+        # Your exact custom ResNet50 — not modified
+        self.backbone = ResNet50Net(num_classes=None)
+
+        # The final output of ResNet50's stage_4 has 2048 channels (512 * Bottleneck.expansion)
+        self.encoder = nn.Linear(2048, embedding_size)
+
+    def forward(self, x):
+        batch_size, t, c, h, w = x.shape
+        x_flat = x.view((batch_size * t, c, h, w))
+
+        # Call your ResNet50, get feature dict
+        feat_dict = self.backbone(x_flat)
+
+        # Extract the deepest feature map
+        feats = feat_dict["stage_4"]  # shape: (B*T, 2048, H/32, W/32)
+
+        # Apply global average pooling to reduce spatial dims to 1x1
+        feats = F.adaptive_avg_pool2d(feats, (1, 1))  # shape: (B*T, 2048, 1, 1)
+
+        # Flatten to (B*T, 2048)
+        feats_flat = feats.view(feats.size(0), -1)
+
+        # Encode to embeddings
+        embs = self.encoder(feats_flat)
+
+        if self.normalize_embeddings:
+            embs = embs / (embs.norm(dim=-1, keepdim=True) + 1e-7)
+        if self.learnable_temp:
+            logit_scale = self.logit_scale.exp()
+            embs = logit_scale * embs
+
+        # Reshape back to (B, T, -1)
+        embs = embs.view((batch_size, t, -1))
+        feats_flat = feats_flat.view((batch_size, t, -1))
+
+        return {
+        "frames": x_flat,
+        "feats": feats_flat,
+        "embs": embs,
+    }
