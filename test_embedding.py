@@ -56,8 +56,8 @@ def embed(
     logging.info("Embedding %s.", class_name)
     for batch in tqdm(iter(class_loader), leave=False):
       print(batch['video_name'])
-      # out = model.infer(batch["frames"].to(device))
-      out = model.module.infer(batch["frames"].to(device))
+      out = model.infer(batch["frames"].to(device))
+      # out = model.module.infer(batch["frames"].to(device))
       emb = out.numpy().embs
       break
     break   
@@ -78,13 +78,34 @@ def setup():
     logging.info("Skipping checkpoint restore.")
   return model, downstream_loaders
 
+def compute_embedding_distance(emb, goal_emb, subtask_idx, distance_scale):
+        dist = np.linalg.norm(emb - goal_emb)
+        dist *= distance_scale[subtask_idx]
+        return dist
+    
+def check_subtask_completion(dist, current_reward, subtask, subtask_solved_counter,
+                             subtask_threshold, subtask_hold_steps,
+                             non_decreasing_reward, num_subtasks,):
+        prev_reward = 0.0
+        if dist < subtask_threshold:
+            subtask_solved_counter += 1
+            if subtask_solved_counter >= subtask_hold_steps:
+                subtask = min(num_subtasks - 1, subtask + 1)
+                subtask_solved_counter = 0
+                if non_decreasing_reward:
+                    prev_reward = current_reward
+        else:
+            subtask_solved_counter = 0
+        return prev_reward, subtask, subtask_solved_counter
 
 def main(_):
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+  print(f"Using device: {device}")
   model, downstream_loader = setup()
   model.to(device).eval()
   rews = []
-  if "xirl" in FLAGS.experiment_path:
+  print(FLAGS.experiment_path)
+  if "xirl_embodiment" in FLAGS.experiment_path:
     print("Using distance to goal reward function")
     goal_emb = utils.load_pickle(FLAGS.experiment_path, "goal_emb.pkl")
     distance_scale = utils.load_pickle(FLAGS.experiment_path,
@@ -100,25 +121,36 @@ def main(_):
     print("Using HOLDR reward function")
     subtask_means = utils.load_pickle(FLAGS.experiment_path, "subtask_means.pkl")
     distance_scale = utils.load_pickle(FLAGS.experiment_path, "distance_scale.pkl")
-
-    reward_fn = HOLDRLearnedVisualReward(
-        subtask_means=subtask_means,
-        distance_scale=distance_scale,
-        model=model,
-    )
+    embs = embed(model, downstream_loader, device)
+    subtask = 0
+    non_decreasing_reward = False
+    prev_reward = 0.0
+    subtask_cost = 2.0
+    subtask_threshold = 0.2
+    subtask_hold_steps = 3
+    distance_normalizer = 5
+    subtask_solved_counter = 0
+    prev_reward = 0.0
     
-    for class_name, class_loader in downstream_loader.items():
-        for batch in tqdm(iter(class_loader), leave=False):
-            video = batch["frames"].to(device)
-            video = video.cpu().numpy()  # Convert to numpy if needed for HOLDR input
-            reward_fn.reset_state()
-            for i in range(video.shape[0]):
-                frame = video[i]
-                reward = reward_fn._get_reward_from_image(frame)
-                rews.append(reward)
-            break
-        break
-
+    for emb in embs:
+      current_goal_emb = subtask_means[subtask]
+      dist = compute_embedding_distance(emb, current_goal_emb, subtask, distance_scale) 
+      shaping = (len(subtask_means) - subtask) * subtask_cost
+      if non_decreasing_reward:
+        reward = prev_reward + (1.0-dist)
+      else:
+        reward = - (dist+shaping)/distance_normalizer
+      if subtask == 1:
+        print("Subtask 1")
+      elif subtask == 2:
+        print("Subtask 2")
+      print(f"Reward: {reward}, Subtask: {subtask}, Distance: {dist}, Shaping: {shaping}")
+      rews.append(reward)      
+      prev_reward, subtask, subtask_solved_counter = check_subtask_completion(
+          dist, reward, subtask, subtask_solved_counter,
+          subtask_threshold, subtask_hold_steps,
+          non_decreasing_reward, len(subtask_means))
+      
   # Save reward plot
   plt.figure()
   plt.plot(rews)
@@ -128,7 +160,7 @@ def main(_):
   plt.grid(True)
 
   # Save the plot instead of showing it
-  save_path = os.path.join("/home/lianniello/xirl_thesis/xirl_conda/", "reward_plot_xirl_default.png")
+  save_path = os.path.join("/home/lianniello/xirl_thesis/xirl_conda/", "reward_plot_holdr_default.png")
   plt.savefig(save_path, bbox_inches='tight')
   print(f"Saved reward plot to: {save_path}")
   plt.close()

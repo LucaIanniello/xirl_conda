@@ -97,9 +97,6 @@ def main(_):
       eval_manager,
   ) = common.get_factories(config, device)
   
-  trainer.model = model
-
-
   # Create checkpoint manager.
   checkpoint_dir = osp.join(exp_dir, "checkpoints")
   checkpoint_manager = CheckpointManager(

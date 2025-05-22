@@ -111,12 +111,12 @@ class SelfSupervisedModel(abc.ABC, nn.Module):
       embs = logit_scale * embs
     embs = embs.view((batch_size, t, -1))
     feats = feats.view((batch_size, t, -1))
-    # return SelfSupervisedOutput(frames=x, feats=feats, embs=embs)
-    return {
-        "frames": x,
-        "feats": feats,
-        "embs": embs,
-    }
+    return SelfSupervisedOutput(frames=x, feats=feats, embs=embs)
+    # return {
+    #     "frames": x,
+    #     "feats": feats,
+    #     "embs": embs,
+    # }
 
   @torch.no_grad()
   def infer(
@@ -133,13 +133,14 @@ class SelfSupervisedModel(abc.ABC, nn.Module):
       out = []
       for i in range(math.ceil(x.shape[1] / effective_bs)):
         sub_frames = x[:, i * effective_bs:(i + 1) * effective_bs]
-        partial_out = SelfSupervisedOutput(**self.forward(sub_frames)).cpu()
-        # out.append(self.forward(sub_frames).cpu())
-        out.append(partial_out)
+        
+        out.append(self.forward(sub_frames).cpu())
+        # partial_out = SelfSupervisedOutput(**self.forward(sub_frames)).cpu()
+        # out.append(partial_out)
       out = SelfSupervisedOutput.merge(out)
     else:
-      # out = self.forward(x).cpu()
-      out = SelfSupervisedOutput(**self.forward(x)).cpu()
+      out = self.forward(x).cpu()
+      # out = SelfSupervisedOutput(**self.forward(x)).cpu()
     return out.squeeze(0)
 
 

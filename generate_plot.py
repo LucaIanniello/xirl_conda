@@ -112,7 +112,7 @@ def cross_shortstick(savename):
   experiments = [
       Experiment(
           # Note: replace with an actual experiment path.
-          path="/tmp/xirl/rl_runs/env_name=SweepToTop-Gripper-State-Allo-TestLayout-v0_reward=learned_reward_type=distance_to_goal_mode=same_algo=xirl_uid=beb120b3-be64-4585-b9d7-99f6c6b550e4/0/",
+          path="/tmp/xirl/rl_runs/env_name=SweepToTop-Gripper-State-Allo-TestLayout-v0_reward=learned_reward_type=holdr_mode=same_algo=holdr_uid=6d5a5b76-f0d3-4ac4-83d8-97fdf5c34a4f/0",
           # Note: You can customize the below attributes to your liking.
           name="XIRL",
           color="tab:red",
@@ -163,7 +163,7 @@ def cross_shortstick(savename):
 def main(_):
   os.makedirs(_PLOT_DIR.value, exist_ok=True)
   update_plotting_params(_MATPLOTLIB_SIZE.value)
-  cross_shortstick("experiment2")
+  cross_shortstick("experiment4")
 
 
 if __name__ == "__main__":

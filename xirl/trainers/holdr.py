@@ -40,9 +40,7 @@ class HOLDRTrainer(Trainer):
             # Compute normalized ground-truth time distances
             time_dists = torch.cdist(idxs.unsqueeze(1), idxs.unsqueeze(1), p=1)
             time_dists = time_dists / time_dists.max()
-            
-            #It can be possible to add a weight based on the distance over the all video frames
-
+        
             # Mean squared error between predicted and ground-truth distances
             loss += F.mse_loss(emb_dists, time_dists)
         loss /= B

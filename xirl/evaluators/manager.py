@@ -51,9 +51,9 @@ class EvalManager:
       for batch_idx, batch in enumerate(valid_loader):
         if eval_iters is not None and batch_idx >= eval_iters:
           break
-        # outs.append(model.infer(batch["frames"].to(device)).numpy())
-        outs.append(
-            model.module.infer(batch["frames"].to(device)).numpy())
+        outs.append(model.infer(batch["frames"].to(device)).numpy())
+        # outs.append(
+        #     model.module.infer(batch["frames"].to(device)).numpy())
       loader_to_output[action_name] = outs
     return loader_to_output
 

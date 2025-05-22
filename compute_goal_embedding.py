@@ -66,8 +66,8 @@ def embed(
   for class_name, class_loader in downstream_loader.items():
     logging.info("Embedding %s.", class_name)
     for batch in tqdm(iter(class_loader), leave=False):
-      # out = model.infer(batch["frames"].to(device))
-      out = model.module.infer(batch["frames"].to(device))
+      out = model.infer(batch["frames"].to(device))
+      # out = model.module.infer(batch["frames"].to(device))
       emb = out.numpy().embs
       init_embs.append(emb[0, :])
       goal_embs.append(emb[-1, :])
@@ -91,30 +91,26 @@ def embed_subtasks(
     for batch in tqdm(iter(class_loader), leave=False):
       video_id = batch["video_name"][0].split("/")[-1]
       subgoal_frames = subgoal_data[video_id]
-      # out = model.infer(batch["frames"].to(device))
-      out = model.module.infer(batch["frames"].to(device))
+      out = model.infer(batch["frames"].to(device))
+      # out = model.module.infer(batch["frames"].to(device))
       emb = out.numpy().embs
       init_embs.append(emb[0, :])
       video_subgoal_embs = []
       for idx in subgoal_frames:
         video_subgoal_embs.append(emb[idx, :])
       all_subgoal_frames_embs.append(video_subgoal_embs)
+  all_subgoal_frames_embs = np.array(all_subgoal_frames_embs)
+
+  # pdb.set_trace()
   
 # Compute the mean embedding for each subtask (column) across all videos (rows)
-  num_subtasks = max(len(video_embs) for video_embs in all_subgoal_frames_embs)
+  num_subtasks = len(all_subgoal_frames_embs[1])
+  # print("Number of subtasks:", num_subtasks)
   subtask_means = []
+# Loop over each subtask
+  subtask_means = np.mean(all_subgoal_frames_embs, axis=0)
 
-  for subtask_idx in range(num_subtasks):
-      subtask_embs = [
-          video_embs[subtask_idx]
-          for video_embs in all_subgoal_frames_embs
-          if len(video_embs) > subtask_idx
-      ]
-      subtask_mean = np.mean(np.stack(subtask_embs, axis=0), axis=0, keepdims=True)
-      subtask_means.append(subtask_mean)
-
-  # Convert subtask means to a structured array
-  subtask_means = np.vstack(subtask_means)  # Shape: (num_subtasks, embedding_dim)
+  # pdb.set_trace()
   # Compute the distance vector
   dist_to_goal = []
   # Distance between the initial embedding and the first subtask
@@ -128,11 +124,8 @@ def embed_subtasks(
       )
 
   dist_to_goal = np.array(dist_to_goal)  # Convert to a NumPy array
-  distance_scale = []
-  for i in range(len(dist_to_goal)):
-      distance_scale.append(1.0 / dist_to_goal[i])
-  distance_scale = np.array(distance_scale)  # Convert to a NumPy array
-  #pdb.set_trace()
+  distance_scale = 1.0 / dist_to_goal
+  # pdb.set_trace()
   return subtask_means, distance_scale
 
 def setup():

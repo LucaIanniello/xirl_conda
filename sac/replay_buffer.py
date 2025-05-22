@@ -209,8 +209,8 @@ class ReplayBufferDistanceToGoal(ReplayBufferLearnedReward):
   def _get_reward_from_image(self):
     image_tensors = [self._pixel_to_tensor(i) for i in self.pixels_staging]
     image_tensors = torch.cat(image_tensors, dim=1)
-    # embs = self.model.infer(image_tensors).numpy().embs
-    embs = self.model.module.infer(image_tensors).numpy().embs
+    embs = self.model.infer(image_tensors).numpy().embs
+    # embs = self.model.module.infer(image_tensors).numpy().embs
     dists = -1.0 * np.linalg.norm(embs - self.goal_emb, axis=-1)
     dists *= self.distance_scale
     return dists
@@ -228,8 +228,8 @@ class ReplayBufferGoalClassifier(ReplayBufferLearnedReward):
   def _get_reward_from_image(self):
     image_tensors = [self._pixel_to_tensor(i) for i in self.pixels_staging]
     image_tensors = torch.cat(image_tensors, dim=1)
-    # prob = torch.sigmoid(self.model.infer(image_tensors).embs)
-    prob = torch.sigmoid(self.model.module.infer(image_tensors).embs)
+    prob = torch.sigmoid(self.model.infer(image_tensors).embs)
+    # prob = torch.sigmoid(self.model.module.infer(image_tensors).embs)
     return prob.detach().cpu().numpy()
 
 class ReplayBufferHOLDR(ReplayBufferLearnedReward):
@@ -298,8 +298,8 @@ class ReplayBufferHOLDR(ReplayBufferLearnedReward):
         """Compute the HOLDR-based reward for the current batch of pixels."""
         image_tensors = [self._pixel_to_tensor(i) for i in self.pixels_staging]
         image_tensors = torch.cat(image_tensors, dim=1)
-        # embs = self.model.infer(image_tensors).numpy().embs  # Shape: (batch_size, emb_dim)
-        embs = self.model.module.infer(image_tensors).numpy().embs  # Shape: (batch_size, emb_dim)
+        embs = self.model.infer(image_tensors).numpy().embs  # Shape: (batch_size, emb_dim)
+        # embs = self.model.module.infer(image_tensors).numpy().embs  # Shape: (batch_size, emb_dim)
 
         rewards = []
         for emb in embs:
