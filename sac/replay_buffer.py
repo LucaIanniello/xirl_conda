@@ -239,8 +239,8 @@ class ReplayBufferHOLDR(ReplayBufferLearnedReward):
         self,
         subtask_means,
         distance_scale,
-        subtask_threshold=0.1,
-        subtask_cost=1.0,
+        subtask_threshold=0.4,
+        subtask_cost=2.0,
         subtask_hold_steps=3,
         **base_kwargs,
     ):
@@ -316,10 +316,10 @@ class ReplayBufferHOLDR(ReplayBufferLearnedReward):
             else:
                 reward = - (dist + shaping) / self._distance_normalizer
                 
-            if self._subtask == 1:
-                print("Subtask 1 completed, reward:", reward)
-            elif self._subtask == 2:
-                print("Subtask 2 completed, reward:", reward)
+            # if self._subtask == 1:
+            #     print("Subtask 1 completed, reward:", reward)
+            # elif self._subtask == 2:
+            #     print("Subtask 2 completed, reward:", reward)
 
             # Check if the subtask is completed
             self._check_subtask_completion(dist, reward)

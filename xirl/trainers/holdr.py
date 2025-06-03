@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 from xirl.trainers.base import Trainer
 from typing import Dict, List, Union
+import pdb
 
 BatchType = Dict[str, Union[torch.Tensor, List[str]]]
 
@@ -34,14 +35,18 @@ class HOLDRTrainer(Trainer):
             idxs = frame_idxs[i].float()  
                    
             # Compute pairwise embedding distances
-            emb_dists = torch.cdist(emb, emb, p=2)
-            emb_dists = emb_dists / self.temperature
-
-            # Compute normalized ground-truth time distances
+            emb_dists = torch.cdist(emb, emb, p=2) / self.temperature
+            
+            # Compute ground-truth time distances considering the frame indices
             time_dists = torch.cdist(idxs.unsqueeze(1), idxs.unsqueeze(1), p=1)
-            time_dists = time_dists / time_dists.max()
-        
+            
+            # Create a mask to consider only upper triangular part of the distance matrix
+            # This is to ignore self-distances and lower triangular part
+            # We use the upper triangular part because we want to predict distances on the future frames and not
+            # considering also the past frames.
+            mask = torch.triu(torch.ones_like(time_dists), diagonal=1).bool()
+
             # Mean squared error between predicted and ground-truth distances
-            loss += F.mse_loss(emb_dists, time_dists)
+            loss += F.mse_loss(emb_dists[mask], time_dists[mask])
         loss /= B
         return loss

@@ -105,27 +105,39 @@ def embed_subtasks(
   
 # Compute the mean embedding for each subtask (column) across all videos (rows)
   num_subtasks = len(all_subgoal_frames_embs[1])
-  # print("Number of subtasks:", num_subtasks)
   subtask_means = []
 # Loop over each subtask
   subtask_means = np.mean(all_subgoal_frames_embs, axis=0)
-
   # pdb.set_trace()
   # Compute the distance vector
   dist_to_goal = []
+  per_subtask_dists = []
   # Distance between the initial embedding and the first subtask
-  dist_to_goal.append(
-      np.linalg.norm(np.stack(init_embs, axis=0) - subtask_means[0], axis=-1).mean()
+  dist = np.linalg.norm(
+      np.stack(init_embs, axis=0) - subtask_means[0], axis=-1
   )
+  dist_to_goal.append(np.mean(dist))
+  per_subtask_dists.append(dist)
+  
   # Distances between consecutive subtasks
   for i in range(1, num_subtasks):
-      dist_to_goal.append(
-          np.linalg.norm(subtask_means[i - 1] - subtask_means[i], axis=-1)
+      dist = np.linalg.norm(
+          subtask_means[i - 1] - subtask_means[i], axis=-1
       )
-
+      dist_to_goal.append(dist)
+      
+      video_dists = np.linalg.norm(
+          all_subgoal_frames_embs[:, i - 1, :] - all_subgoal_frames_embs[:, i, :], axis=1
+      )
+      per_subtask_dists.append(video_dists)
+      
   dist_to_goal = np.array(dist_to_goal)  # Convert to a NumPy array
   distance_scale = 1.0 / dist_to_goal
-  # pdb.set_trace()
+  
+  subtask_thresholds = np.array([np.percentile(dists, 80) for dists in per_subtask_dists]) * distance_scale
+  for i, dists in enumerate(per_subtask_dists):
+    print(f"Subtask {i} distance stats: min={np.min(dists)}, max={np.max(dists)}, mean={np.mean(dists)}, median={np.median(dists)}, 80th={np.percentile(dists, 80)}, 30th={np.percentile(dists, 30)}, 50th={np.percentile(dists, 50)}")
+  pdb.set_trace()
   return subtask_means, distance_scale
 
 def setup():
@@ -154,6 +166,7 @@ def main(_):
     subtask_means, distance_scale = embed_subtasks(model, downstream_loader, device, subgoal_data)
     utils.save_pickle(FLAGS.experiment_path, subtask_means, "subtask_means.pkl")
     utils.save_pickle(FLAGS.experiment_path, distance_scale, "distance_scale.pkl")
+    # utils.save_pickle(FLAGS.experiment_path, subtask_thresholds, "subtask_thresholds.pkl")
   else:
     goal_emb, distance_scale = embed(model, downstream_loader, device)
     utils.save_pickle(FLAGS.experiment_path, goal_emb, "goal_emb.pkl")

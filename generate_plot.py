@@ -112,7 +112,7 @@ def cross_shortstick(savename):
   experiments = [
       Experiment(
           # Note: replace with an actual experiment path.
-          path="/tmp/xirl/rl_runs/env_name=SweepToTop-Gripper-State-Allo-TestLayout-v0_reward=learned_reward_type=holdr_mode=same_algo=holdr_uid=6d5a5b76-f0d3-4ac4-83d8-97fdf5c34a4f/0",
+          path="/tmp/xirl/rl_runs/env_name=SweepToTop-Gripper-State-Allo-TestLayout-v0_reward=learned_reward_type=holdr_mode=same_algo=holdr_uid=63d6c201-ea58-480f-884a-eb4e83131bcc/0",
           # Note: You can customize the below attributes to your liking.
           name="XIRL",
           color="tab:red",
