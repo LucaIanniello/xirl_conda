@@ -279,7 +279,7 @@ class ReplayBufferHOLDR(ReplayBufferLearnedReward):
     def _compute_embedding_distance(self, emb, goal_emb, subtask_idx):
         """Compute the scaled distance between the embedding and the goal embedding."""
         dist = np.linalg.norm(emb - goal_emb)
-        dist *= self._distance_scale[subtask_idx]
+        # dist *= self._distance_scale[subtask_idx]
         return dist
 
     def _check_subtask_completion(self, dist, current_reward):
@@ -309,12 +309,14 @@ class ReplayBufferHOLDR(ReplayBufferLearnedReward):
 
             # Distance-based reward
             dist = self._compute_embedding_distance(emb, goal_emb, self._subtask)
-            shaping = (self._num_subtasks - self._subtask) * self._subtask_cost
+            goal_dist = self._compute_embedding_distance(goal_emb, goal_emb, self._subtask)
+            # shaping = (self._num_subtasks - self._subtask) * self._subtask_cost
             
             if self._non_decreasing_reward:
                 reward = self._pred_reward + (1.0 - dist)
             else:
-                reward = - (dist + shaping) / self._distance_normalizer
+                # reward = - (dist + shaping) / self._distance_normalizer
+                reward = - max(0.0, dist - goal_dist) / self._distance_normalizer
                 
             # if self._subtask == 1:
             #     print("Subtask 1 completed, reward:", reward)

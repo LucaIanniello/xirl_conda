@@ -47,6 +47,10 @@ class HOLDRTrainer(Trainer):
         holdr_loss = 0.0
         frame_idxs = batch["frame_idxs"].to(device)  # (B, T)
         
+        distance_subtask_means_loss = 0.0
+        distance_frames_before_subtask_loss = 0.0
+        subtask_embeddings = defaultdict(list)
+        
         for i in range(B):
             emb = embs[i]            
             idxs = frame_idxs[i].float()     
@@ -65,6 +69,55 @@ class HOLDRTrainer(Trainer):
             # Mean squared error between predicted and ground-truth distances
             holdr_loss += F.mse_loss(emb_dists[mask], time_dists[mask])
             
-        holdr_loss /= B
+            #SEMANTIC LOSS
+            vid_path = batch["video_name"][i]
+            video_name = "/".join(vid_path.split("/")[-2:])  # e.g., "gripper/0"
+            
+            for j,t in enumerate(idxs):
+                key = (video_name, int(t.item()))
+                if key in self.subtask_map:
+                    subtask_id = self.subtask_map[key]
+                    subtask_embeddings[subtask_id].append(emb[j])
+               
+        subtask_means = {}     
+        for subtask_id, emb_list in subtask_embeddings.items():
+            if len(emb_list) < 2:
+                continue
+            embs_tensor = torch.stack(emb_list, dim=0)
+            mean_emb = embs_tensor.mean(dim=0)
+            subtask_means[subtask_id] = mean_emb
+            for e in emb_list:
+                target = torch.tensor([1.0], device=e.device)  # label: similar
+                distance_subtask_means_loss += F.cosine_embedding_loss(
+                    e.unsqueeze(0),
+                    mean_emb.unsqueeze(0),
+                    target
+                )
                 
-        return holdr_loss
+        for i in range(B):
+            emb = embs[i]         
+            idxs = frame_idxs[i]     
+            vid_path = batch["video_name"][i]
+            video_name = "/".join(vid_path.split("/")[-2:])
+
+            for j, t in enumerate(idxs):
+                t_int = int(t.item())
+                key = (video_name, t_int)
+
+                if key in self.subtask_map:
+                    subtask_id = self.subtask_map[key]
+                    for k in range(j): 
+                        prev_emb = emb[k]
+                        target = torch.tensor([1.0], device=prev_emb.device)
+                        distance_frames_before_subtask_loss += F.cosine_embedding_loss(
+                            prev_emb.unsqueeze(0),
+                            subtask_means[subtask_id].unsqueeze(0),
+                            target
+                        )         
+        
+        holdr_loss /= B
+        distance_subtask_means_loss /= max(1, len(subtask_embeddings))
+        distance_frames_before_subtask_loss /= max(1, len(subtask_embeddings))
+                
+        loss = holdr_loss + self.distance_subtask_means_weight * distance_subtask_means_loss + self.distance_frames_before_subtask_weight * distance_frames_before_subtask_loss
+        return loss

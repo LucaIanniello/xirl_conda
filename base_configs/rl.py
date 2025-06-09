@@ -50,7 +50,7 @@ def get_config():
   config.frame_stack = 3
 
   config.reward_wrapper = ml_collections.ConfigDict()
-  config.reward_wrapper.pretrained_path = "/home/lucaianniello/Thesis/XIRL/results/Experiment_Results/dataset=xmagical_mode=same_algo=holdr_embodiment=gripper_uid=68e0b635-5637-4710-8498-eb2d28ead022"
+  config.reward_wrapper.pretrained_path = "/home/lucaianniello/Thesis/XIRL/results/Experiment_Results/dataset=xmagical_mode=same_algo=xirl_embodiment=gripper_uid=cbe41f55-d962-4eb0-8e98-15c26d870185"
   # Can be one of ['distance_to_goal', 'goal_classifier', holdr].
   config.reward_wrapper.type = "holdr"
 

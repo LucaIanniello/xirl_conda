@@ -137,7 +137,6 @@ def embed_subtasks(
   subtask_thresholds = np.array([np.percentile(dists, 80) for dists in per_subtask_dists]) * distance_scale
   for i, dists in enumerate(per_subtask_dists):
     print(f"Subtask {i} distance stats: min={np.min(dists)}, max={np.max(dists)}, mean={np.mean(dists)}, median={np.median(dists)}, 80th={np.percentile(dists, 80)}, 30th={np.percentile(dists, 30)}, 50th={np.percentile(dists, 50)}")
-  pdb.set_trace()
   return subtask_means, distance_scale
 
 def setup():

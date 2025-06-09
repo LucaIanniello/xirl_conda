@@ -10,15 +10,24 @@ import xmagical.entities as en
 from xmagical.entities.embodiments.gripper import NonHolonomicGripperEmbodiment
 import random
 import json
+import pdb
 
 DEFAULT_GOAL_XYHW = (-1.2, 1.16, 0.4, 2.4)
 HOME_POSE = (0.0, -0.6)
-UP_DOWN_MAG = 0.5
+UP_DOWN_MAG = 0.4
 ANG_TOT = 0.05
 k_rho      = 0.8
 k_alpha    = 3.0
 max_omega  = 1.0 
 
+def to_serializable(obj):
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, (list, tuple)):
+        return [to_serializable(x) for x in obj]
+    if isinstance(obj, dict):
+        return {k: to_serializable(v) for k, v in obj.items()}
+    return obj
 
 def noisy_step(env, action, rho, 
                sigma_far=(0.05, 0.10, 0.0), 
@@ -40,8 +49,9 @@ def noisy_step(env, action, rho,
     return env.step(noisy_action), noisy_action
 
 
-def get_block_positions():
+def get_block_positions(states_array):
     state = env.get_state()
+    states_array.append(state)
     block_positions = {}
     for i, color_name in enumerate(["red","blue","yellow"]):
         base = 2 + i*5
@@ -60,10 +70,11 @@ def get_block_positions():
 def in_goal(goal_lower_center, pos_y, goal_y_max) -> bool:
     return goal_lower_center <= pos_y <= goal_y_max
 
-def move_to(env, target_xy, color, OPEN_CLOSE_MAG=0.0, tol=0.1, max_steps=400):
+def move_to(env, target_xy, color, observations_array, actions_array, states_array, reward_array , OPEN_CLOSE_MAG=0.0, tol=0.1, max_steps=400):
     actions = []
     for step in range(max_steps):
         state = env.get_state()
+        states_array.append(state)
         robot_x, robot_y = state[0], state[1]
         cos_th, sin_th = state[17], state[18]
         dx = target_xy[0] - robot_x
@@ -78,7 +89,10 @@ def move_to(env, target_xy, color, OPEN_CLOSE_MAG=0.0, tol=0.1, max_steps=400):
             for i in range(5):
                 action = np.array([0.0, 0.0, 1.0], dtype=np.float32)
                 actions.append(action)
+                actions_array.append(action)
                 obs, rew, done, info = env.step(action)
+                observations_array.append(obs)
+                reward_array.append(rew)                
                 if done:
                     print("Env terminated early.")
                     return actions
@@ -88,6 +102,9 @@ def move_to(env, target_xy, color, OPEN_CLOSE_MAG=0.0, tol=0.1, max_steps=400):
         action = np.array([v, omega, OPEN_CLOSE_MAG], dtype=np.float32)
 
         (obs, rew, done, info), noisy_act = noisy_step(env, action, rho)
+        observations_array.append(obs)
+        reward_array.append(rew)
+        actions_array.append(noisy_act)
 
         # 4) record the *noisy* command
         actions.append(noisy_act)
@@ -99,25 +116,28 @@ def move_to(env, target_xy, color, OPEN_CLOSE_MAG=0.0, tol=0.1, max_steps=400):
     return actions
 
 
-def push_to_goal(env, target_x, target_y, goal_y_min, goal_y_max, color, max_steps=400):
+def push_to_goal(env, target_x, target_y, goal_y_min, goal_y_max, color, observations_array, actions_array, states_array, reward_array, max_steps=400):
     actions = []
     step = 0    
     while step < (max_steps) and not in_goal(goal_y_min, target_y, goal_y_max):
-        block_positions = get_block_positions()
+        block_positions = get_block_positions(states_array=states_array)
         _, target_y = block_positions[color]
         target_xy = (target_x, goal_y_max)
-        actions += move_to(env, target_xy, color, OPEN_CLOSE_MAG=1.0, max_steps=1)
+        actions += move_to(env, target_xy, color, observations_array, actions_array, states_array, reward_array, OPEN_CLOSE_MAG=1.0, max_steps=1)
         step += 1
-    for step in range(10):
+    for step in range(15):
         action = [-1.0, 0.0, 0.0] # Move back
         actions.append(np.array(action, dtype=np.float32))
         obs, rew, done, info = env.step(actions[-1])
+        observations_array.append(obs)
+        actions_array.append(actions[-1])
+        reward_array.append(rew)
     if done:
         print("Env terminated early.")
         return actions
     return actions
 
-def record_trajectory(env, actions, save_dir: Path, video_id: str, render_kwargs=None):
+def record_trajectory(env, actions, save_dir: Path, video_id: str, states_array, render_kwargs=None):
     env.reset()
     count = 0
     frames = []
@@ -140,7 +160,7 @@ def record_trajectory(env, actions, save_dir: Path, video_id: str, render_kwargs
             imageio.imwrite(str(save_dir / f"{count}.png"), frame)
 
             # Check block positions for subgoals
-            block_positions = get_block_positions()
+            block_positions = get_block_positions(states_array)
             for color in ["red", "blue", "yellow"]:
                 if not recorded_subgoals[color]:
                     _, by = block_positions[color]
@@ -159,7 +179,7 @@ def record_trajectory(env, actions, save_dir: Path, video_id: str, render_kwargs
     return frames, subgoal_frame_indices
 
 
-def generate_video(env, out_path: Path, video_id: str, subgoal_frames_dict: dict, video_path,  fps: int = 30):
+def generate_video(env, out_path: Path, video_id: str, subgoal_frames_dict: dict, video_path, observations, actions, states,reward,  fps: int = 30):
     env.reset()
     all_actions = []
     frames = []
@@ -170,10 +190,10 @@ def generate_video(env, out_path: Path, video_id: str, subgoal_frames_dict: dict
     goal_center_y = (goal_y_min + goal_y_max) / 2
     goal_lower_center = (goal_center_y + goal_y_min) / 2
 
-    starting_block_positions = get_block_positions()
+    starting_block_positions = get_block_positions(states_array=states)
 
     for color in ["red", "blue", "yellow"]:
-        block_positions = get_block_positions()
+        block_positions = get_block_positions(states_array=states)
         bx, by = block_positions[color]
         starting_x, _ = starting_block_positions[color]
         if starting_x == -0.5:
@@ -182,14 +202,14 @@ def generate_video(env, out_path: Path, video_id: str, subgoal_frames_dict: dict
             f_bx = np.random.uniform(starting_x - 0.1, starting_x + 0.3)
         elif starting_x == 0.0:
             f_bx = np.random.uniform(starting_x - 0.3, starting_x + 0.3)
-        all_actions += move_to(env, (bx, by), color)
-        all_actions += push_to_goal(env, f_bx, by, goal_lower_center, goal_y_max, color)
+        all_actions += move_to(env, (bx, by), color, observations_array=observations, actions_array=actions, states_array=states, reward_array=reward)
+        all_actions += push_to_goal(env, f_bx, by, goal_lower_center, goal_y_max, color, observations_array=observations, actions_array=actions, states_array=states, reward_array=reward)
 
-    final_block_positions = get_block_positions()
+    final_block_positions = get_block_positions(states_array=states)
     if all(in_goal(goal_y_min, final_block_positions[color][1], goal_y_max) for color in ["red", "blue", "yellow"]):
         save_dir = out_path.parent
         save_dir.mkdir(parents=True, exist_ok=True)
-        frames, subgoal_frames = record_trajectory(env, all_actions, frame_dir, video_id)
+        frames, subgoal_frames = record_trajectory(env, all_actions, frame_dir, video_id, states_array=states)
 
         imageio.mimsave(str(out_path), frames, fps=fps)
 
@@ -199,6 +219,16 @@ def generate_video(env, out_path: Path, video_id: str, subgoal_frames_dict: dict
             subgoal_frames.get("blue", -1),
             subgoal_frames.get("yellow", -1)
         ]
+        
+        with open(str(frame_dir / f"{video_id}_observations.json"), "w") as f:
+            json.dump(to_serializable(observations), f)
+        with open(str(frame_dir / f"{video_id}_actions.json"), "w") as f:
+            json.dump(to_serializable(actions), f)
+        with open(str(frame_dir / f"{video_id}_rewards.json"), "w") as f:
+            json.dump(to_serializable(rewards), f)
+        with open(str(frame_dir / f"{video_id}_states.json"), "w") as f:
+            json.dump(to_serializable(states), f)
+            
         return True
     else:
         return False
@@ -210,20 +240,28 @@ if __name__ == "__main__":
     videos_root = root_dir / "videos"
     frames_root = root_dir / "frames" / "train" / "gripper"
     subgoal_frames_dict = {}
+    
+    observations = []
+    actions = []
+    states = []
+    rewards = []
+    
 
     colors_set = [en.ShapeColor.YELLOW, en.ShapeColor.BLUE, en.ShapeColor.RED]
-    env = SweepToTopEnv(
-        robot_cls=NonHolonomicGripperEmbodiment,
-        use_state=True,
-        colors_set=colors_set
-    )
 
-    for i in range(1000):
+
+    for i in range(1100):
         video_id = f"{i}"
         random.shuffle(colors_set)
-        if colors_set[1] == en.ShapeColor.BLUE:
-            colors_set[1] = colors_set[2]
-            colors_set[2] = en.ShapeColor.BLUE
+        # if colors_set[1] == en.ShapeColor.BLUE:
+        #     colors_set[1] = colors_set[2]
+        #     colors_set[2] = en.ShapeColor.BLUE
+        
+        env = SweepToTopEnv(
+            robot_cls=NonHolonomicGripperEmbodiment,
+            use_state=True, 
+            colors_set=colors_set,
+        )
 
         print(f"Generating video {video_id}...")
         print(f"Colors: {colors_set}")
@@ -236,7 +274,7 @@ if __name__ == "__main__":
         frame_dir.mkdir(parents=True, exist_ok=True)
         video_dir.mkdir(parents=True, exist_ok=True)
 
-        success = generate_video(env, video_path, video_id, subgoal_frames_dict, video_dir)
+        success = generate_video(env, video_path, video_id, subgoal_frames_dict, video_dir, observations, actions, states, rewards)
 
         if success:
             file_size = os.path.getsize(video_path)
@@ -260,9 +298,18 @@ if __name__ == "__main__":
 
             # Remove any previous entry in subgoal dict
             subgoal_frames_dict.pop(video_id, None)
+            # Remove previously generated JSON files
+            for suffix in ["observations", "actions", "rewards", "states"]:
+                json_file = video_dir / f"{video_id}_{suffix}.json"
+                if json_file.exists():
+                    json_file.unlink()
 
+            observations.clear()
+            actions.clear()
+            states.clear()
+            rewards.clear()
             # Retry
-            success = generate_video(env, video_path, video_id, subgoal_frames_dict, video_dir)
+            success = generate_video(env, video_path, video_id, subgoal_frames_dict, video_dir, observations, actions, states, rewards)
 
             if success:
                 file_size = os.path.getsize(video_path)
@@ -275,3 +322,7 @@ if __name__ == "__main__":
     # Save subgoal dictionary
     with open(root_dir / "subgoal_frames.json", "w") as f:
         json.dump(subgoal_frames_dict, f, indent=2)
+        
+
+        
+    

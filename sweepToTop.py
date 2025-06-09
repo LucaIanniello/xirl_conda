@@ -17,7 +17,7 @@ DEFAULT_BLOCK_POSES = [
     ((0.0, 0.0), 0.0),
     ((0.5, 0.0), 0.0),
 ]
-DEFAULT_GOAL_COLOR = en.ShapeColor.RED
+DEFAULT_GOAL_COLOR = en.ShapeColor.GREEN
 DEFAULT_GOAL_XYHW = (-1.2, 1.16, 0.4, 2.4)
 # Max possible L2 distance (arena diagonal 2*sqrt(2)).
 D_MAX = 2.8284271247461903
@@ -33,6 +33,7 @@ class SweepToTopEnv(BaseEnv):
         rand_layout_full: bool = False,
         rand_shapes: bool = False,
         rand_colors: bool = False,
+        colors_set = None,
         **kwargs,
     ) -> None:
         """Constructor.
@@ -46,6 +47,9 @@ class SweepToTopEnv(BaseEnv):
             rand_colors: Whether to randomize the colors of the debris and the
                 goal zone.
         """
+              # Remove color_set from kwargs if present
+        if 'color_set' in kwargs:
+            kwargs.pop('color_set')
         super().__init__(**kwargs)
 
         self.use_state = True
@@ -60,6 +64,7 @@ class SweepToTopEnv(BaseEnv):
         self.starting_position = [0] * self.num_debris
         self.actual_goal_stage = 0 #0 is red, 1 is blue, 2 is yellow
         self.last_color_reward = 0
+        self.colors_set = colors_set
         
         if self.use_state:
             # Redefine the observation space if we are using states as opposed
@@ -182,8 +187,8 @@ class SweepToTopEnv(BaseEnv):
         #     replace=False,
         # )
         debris_shapes = [DEFAULT_BLOCK_SHAPE] * self.num_debris
-        colors_set = [en.ShapeColor.RED, en.ShapeColor.BLUE, en.ShapeColor.YELLOW]
-        self.rng.shuffle(colors_set)
+        colors_set = self.colors_set
+        # self.rng.shuffle(colors_set)
         debris_colors = colors_set[: self.num_debris]
         # if self.rand_shapes:
         #     debris_shapes = self.rng.choice(
@@ -370,13 +375,13 @@ class SweepToTopEnv(BaseEnv):
             if in_goal(distances["yellow"][1]):
                 self.stage_completed[2] = True
             else:
-                self.last_color_reward = 0.3 * moving_to_block_reward + 0.5 * push_reward + 0.2* grip_reward
-        reward = 0.3 * moving_to_block_reward + 0.5 * push_reward + 0.2* grip_reward
+                self.last_color_reward = 0.3 * moving_to_block_reward + 0.7 * push_reward
+        reward = 0.3 * moving_to_block_reward + 0.7 * push_reward 
         
         if self.stage_completed[0] and self.stage_completed[1] and self.stage_completed[2]:
             # All blocks are in the goal area
             # To keep the final reward at the higher value possible without falling to zero
-            reward = 2* self.last_color_reward 
+            reward = self.last_color_reward 
  
         return reward
             

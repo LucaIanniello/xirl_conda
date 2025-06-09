@@ -16,3 +16,5 @@ multicolor_dataset/
 
 videos/wandb/
 wandb/
+
+egocentric_dataset/

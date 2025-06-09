@@ -126,7 +126,7 @@ def main(_):
     non_decreasing_reward = False
     prev_reward = 0.0
     subtask_cost = 2.0
-    subtask_threshold = 0.4
+    subtask_threshold = 0.2
     subtask_hold_steps = 3
     distance_normalizer = 5
     subtask_solved_counter = 0
