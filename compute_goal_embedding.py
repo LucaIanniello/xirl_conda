@@ -158,18 +158,18 @@ def main(_):
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
   model, downstream_loader = setup()
   model.to(device).eval()
-  subgoal_file_path = "/home/lianniello/subtask_sweepToTop_dataset/subgoal_frames.json"
+  subgoal_file_path = "/home/lianniello/xirl_thesis/xirl_conda/egocentric_dataset/subgoal_frames.json"
   
-  if "holdr_embodiment" in FLAGS.experiment_path:
-    subgoal_data = read_subgoal_from_file(subgoal_file_path)
-    subtask_means, distance_scale = embed_subtasks(model, downstream_loader, device, subgoal_data)
-    utils.save_pickle(FLAGS.experiment_path, subtask_means, "subtask_means.pkl")
-    utils.save_pickle(FLAGS.experiment_path, distance_scale, "distance_scale.pkl")
-    # utils.save_pickle(FLAGS.experiment_path, subtask_thresholds, "subtask_thresholds.pkl")
-  else:
-    goal_emb, distance_scale = embed(model, downstream_loader, device)
-    utils.save_pickle(FLAGS.experiment_path, goal_emb, "goal_emb.pkl")
-    utils.save_pickle(FLAGS.experiment_path, distance_scale, "distance_scale.pkl")
+  # if "holdr_embodiment" in FLAGS.experiment_path:
+  subgoal_data = read_subgoal_from_file(subgoal_file_path)
+  subtask_means, distance_scale = embed_subtasks(model, downstream_loader, device, subgoal_data)
+  utils.save_pickle(FLAGS.experiment_path, subtask_means, "subtask_means.pkl")
+  utils.save_pickle(FLAGS.experiment_path, distance_scale, "distance_scale.pkl")
+  #   # utils.save_pickle(FLAGS.experiment_path, subtask_thresholds, "subtask_thresholds.pkl")
+  # else:
+  #   goal_emb, distance_scale = embed(model, downstream_loader, device)
+  #   utils.save_pickle(FLAGS.experiment_path, goal_emb, "goal_emb.pkl")
+  #   utils.save_pickle(FLAGS.experiment_path, distance_scale, "distance_scale.pkl")
 
 
 if __name__ == "__main__":

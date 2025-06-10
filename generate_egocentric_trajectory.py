@@ -31,7 +31,7 @@ def get_block_positions_and_colors(state):
             block_positions["yellow"] = (bx, by)
             color = "yellow"
         
-    print("Block positions:", block_positions)
+    # print("Block positions:", block_positions)
 
     for color, pos in block_positions.items():
         if color == "red":
@@ -93,16 +93,16 @@ if __name__ == "__main__":
     for repo_dir in train_allo_root.iterdir():
         colors_set = []
         repo_name = repo_dir.name  
-        print(f"Processing {repo_name}...") 
+        # print(f"Processing {repo_name}...") 
         state_path = train_allo_root / repo_name / f"{repo_name}_states.json"
         action_file = train_allo_root / repo_name / f"{repo_name}_actions.json"
         with open(state_path, 'r') as f:
             states = json.load(f)
         
         initial_state = states[0]
-        print(f"Initial state for {repo_name}: {initial_state}")
+        # print(f"Initial state for {repo_name}: {initial_state}")
         _, colors_set = get_block_positions_and_colors(initial_state)
-        print(f"Colors set for {repo_name}: {colors_set}")
+        # print(f"Colors set for {repo_name}: {colors_set}")
         
         env = SweepToTopEnv(
             robot_cls=NonHolonomicGripperEmbodiment,
@@ -125,16 +125,16 @@ if __name__ == "__main__":
     for repo_dir in validation_allo_root.iterdir():
         colors_set = []
         repo_name = repo_dir.name  
-        print(f"Processing {repo_name}...") 
+        # print(f"Processing {repo_name}...") 
         state_path = validation_allo_root / repo_name / f"{repo_name}_states.json"
         action_file = validation_allo_root / repo_name / f"{repo_name}_actions.json"
         with open(state_path, 'r') as f:
             states = json.load(f)
         
         initial_state = states[0]
-        print(f"Initial state for {repo_name}: {initial_state}")
+        # print(f"Initial state for {repo_name}: {initial_state}")
         _, colors_set = get_block_positions_and_colors(initial_state)
-        print(f"Colors set for {repo_name}: {colors_set}")
+        # print(f"Colors set for {repo_name}: {colors_set}")
         
         env = SweepToTopEnv(
             robot_cls=NonHolonomicGripperEmbodiment,

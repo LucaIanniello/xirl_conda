@@ -20,8 +20,9 @@ def get_config():
   config.model.learnable_temp = False
   
   config.loss.holdr.temperature = 1.0
-  config.loss.holdr.subtask_json_path = "/home/lianniello/subtask_sweepToTop_dataset/subgoal_frames.json"
+  config.loss.holdr.subtask_json_path = "/home/lianniello/xirl_thesis/xirl_conda/egocentric_dataset/subgoal_frames.json"
   config.loss.holdr.distance_subtask_means_weight = 1.0
   config.loss.holdr.distance_frames_before_subtask_weight = 0.5
+  config.loss.holdr.contrastive_weight = 0.5
 
   return config

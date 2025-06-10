@@ -64,7 +64,7 @@ def main(_):
     return
   
   if FLAGS.wandb:
-    wandb.init(project="HOLDR_MOD", group=FLAGS.experiment_name, name=FLAGS.experiment_name, mode="online")
+    wandb.init(project="EGOTCC", group=FLAGS.experiment_name, name=FLAGS.experiment_name, mode="online")
     wandb.config.update(FLAGS)
     wandb.run.log_code(".")
     wandb.config.update(config.to_dict(), allow_val_change=True)
