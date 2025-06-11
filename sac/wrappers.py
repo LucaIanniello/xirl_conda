@@ -334,8 +334,8 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         self,
         subtask_means,
         distance_scale,
-        subtask_threshold=0.3,
-        subtask_cost=2.0,
+        subtask_threshold=0.5,
+        subtask_cost=4.0,
         subtask_hold_steps=3,
         **base_kwargs,
     ):
@@ -368,6 +368,7 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         return dist
     
     def _check_subtask_completion(self, dist, current_reward):
+      if self._subtask == 0:
         if dist < self._subtask_threshold:
             self._subtask_solved_counter += 1
             if self._subtask_solved_counter >= self._subtask_hold_steps:
@@ -377,6 +378,17 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
                     self._prev_reward = current_reward
         else:
             self._subtask_solved_counter = 0
+      elif self._subtask == 1:
+        if dist < 4.5:
+            self._subtask_solved_counter += 1
+            if self._subtask_solved_counter >= self._subtask_hold_steps:
+                self._subtask = min(self._num_subtasks - 1, self._subtask + 1)
+                self._subtask_solved_counter = 0
+                if self._non_decreasing_reward:
+                    self._prev_reward = current_reward
+        else:
+            self._subtask_solved_counter = 0
+      
             
     def _get_reward_from_image(self, image):
        
@@ -393,11 +405,17 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
 
         # shaping = (self._num_subtasks - self._subtask) * self._subtask_cost
         goal_dist = self._compute_embedding_distance(goal_emb, goal_emb, self._subtask)
-        if self._non_decreasing_reward:
-            reward = self._pred_reward + (1.0 - dist)
-        else:
-            reward = - max(0.0, dist - goal_dist) / self._distance_normalizer
-            # - (dist + shaping) / self._distance_normalizer
+        
+        print(f"Subtask {self._subtask}, Distance: {dist}, Goal Distance: {goal_dist}")
+        # if self._non_decreasing_reward:
+        # reward = self._prev_reward + (1.0 - dist)
+        # else:
+        #reward = - max(0.0, dist - goal_dist) / self._distance_normalizer
+        # reward = - (dist + shaping) / self._distance_normalizer
+        
+        step_reward = 1.0 - dist / self._distance_normalizer
+        bonus_reward = self._subtask * self._subtask_cost
+        reward = step_reward + bonus_reward
             
         # if self._subtask == 1:
         #         print("Subtask 1 completed, reward:", reward)
