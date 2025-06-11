@@ -334,7 +334,7 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         self,
         subtask_means,
         distance_scale,
-        subtask_threshold=0.5,
+        subtask_threshold=5.5,
         subtask_cost=4.0,
         subtask_hold_steps=3,
         **base_kwargs,
@@ -406,7 +406,7 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         # shaping = (self._num_subtasks - self._subtask) * self._subtask_cost
         goal_dist = self._compute_embedding_distance(goal_emb, goal_emb, self._subtask)
         
-        print(f"Subtask {self._subtask}, Distance: {dist}, Goal Distance: {goal_dist}")
+        # print(f"Subtask {self._subtask}, Distance: {dist}, Goal Distance: {goal_dist}")
         # if self._non_decreasing_reward:
         # reward = self._prev_reward + (1.0 - dist)
         # else:

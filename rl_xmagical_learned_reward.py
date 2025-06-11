@@ -40,13 +40,14 @@ def main(_):
   with open(os.path.join(FLAGS.pretrained_path, "metadata.yaml"), "r") as fp:
     kwargs = yaml.load(fp, Loader=yaml.FullLoader)
 
-
-  if kwargs["algo"] == "goal_classifier":
-    reward_type = "goal_classifier"
-  elif kwargs["algo"] == "holdr":
-      reward_type = "holdr"    
-  else:
-    reward_type = "distance_to_goal"
+  reward_type = "holdr"  
+  
+  # if kwargs["algo"] == "goal_classifier":
+  #   reward_type = "goal_classifier"
+  # elif kwargs["algo"] == "holdr":
+  #     reward_type = "holdr"    
+  # else:
+  #   reward_type = "distance_to_goal"
 
   # Map the embodiment to the x-MAGICAL env name.
   env_name = XMAGICAL_EMBODIMENT_TO_ENV_NAME[kwargs["embodiment"]]

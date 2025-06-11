@@ -239,8 +239,8 @@ class ReplayBufferHOLDR(ReplayBufferLearnedReward):
         self,
         subtask_means,
         distance_scale,
-        subtask_threshold=0.4,
-        subtask_cost=2.0,
+        subtask_threshold=5.5,
+        subtask_cost=4.0,
         subtask_hold_steps=3,
         **base_kwargs,
     ):
@@ -312,11 +312,15 @@ class ReplayBufferHOLDR(ReplayBufferLearnedReward):
             goal_dist = self._compute_embedding_distance(goal_emb, goal_emb, self._subtask)
             # shaping = (self._num_subtasks - self._subtask) * self._subtask_cost
             
-            if self._non_decreasing_reward:
-                reward = self._pred_reward + (1.0 - dist)
-            else:
-                # reward = - (dist + shaping) / self._distance_normalizer
-                reward = - max(0.0, dist - goal_dist) / self._distance_normalizer
+            # if self._non_decreasing_reward:
+            #     reward = self._pred_reward + (1.0 - dist)
+            # else:
+            #     # reward = - (dist + shaping) / self._distance_normalizer
+            #     reward = - max(0.0, dist - goal_dist) / self._distance_normalizer
+            
+            step_reward = 1.0 - dist / self._distance_normalizer
+            bonus_reward = self._subtask * self._subtask_cost
+            reward = step_reward + bonus_reward
                 
             # if self._subtask == 1:
             #     print("Subtask 1 completed, reward:", reward)

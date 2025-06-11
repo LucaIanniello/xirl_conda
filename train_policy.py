@@ -95,7 +95,7 @@ def main(_):
   utils.setup_experiment(exp_dir, config, FLAGS.resume)
   
   if FLAGS.wandb:
-    wandb.init(project="HOLD", group="HOLD-EXPERIMENT5", name="HOLD-EXPERIMENT5", mode="online")
+    wandb.init(project="EgocentricPretrain", group="Experiment11", name="Experiment11", mode="online")
     wandb.config.update(FLAGS)
     wandb.run.log_code(".")
     wandb.config.update(config.to_dict(), allow_val_change=True)
