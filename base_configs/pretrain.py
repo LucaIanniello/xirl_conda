@@ -27,7 +27,7 @@ def get_config():
   # General experiment params.
   # ============================================== #
   # The root directory where experiments will be saved.
-  config.root_dir = "/tmp/xirl/pretrain_runs/"
+  config.root_dir = "/tmp/xirl-lianniello/pretrain_runs/"
   # Rng seed. Set this to `none` to disable seeding.
   config.seed = 1
   # cudnn-related parameters that affect reproducibility.
