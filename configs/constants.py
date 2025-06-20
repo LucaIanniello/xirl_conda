@@ -39,7 +39,8 @@ ALGORITHMS = frozenset([
     "lifs",
     "goal_classifier",
     "raw_imagenet",
-    "holdr"
+    "holdr", 
+    "reds"
 ])
 
 # A mapping from x-MAGICAL embodiment to RL training iterations.
@@ -47,7 +48,7 @@ XMAGICALTrainingIterations = FrozenConfigDict({
     "longstick": 75_000,
     "mediumstick": 250_000,
     "shortstick": 500_000,
-    "gripper": 1_000_000,
+    "gripper": 2_000_000,
 })
 
 # A mapping from RLV environment to RL training iterations.

@@ -80,13 +80,15 @@ def setup():
 
 def compute_embedding_distance(emb, goal_emb, subtask_idx, distance_scale):
         dist = np.linalg.norm(emb - goal_emb)
-        dist *= distance_scale[subtask_idx]
+        # dist *= distance_scale[subtask_idx]
         return dist
     
 def check_subtask_completion(dist, current_reward, subtask, subtask_solved_counter,
                              subtask_threshold, subtask_hold_steps,
-                             non_decreasing_reward, num_subtasks,):
-        prev_reward = 0.0
+                             non_decreasing_reward, num_subtasks):
+    prev_reward = 0.0
+    # Logic mirrors the provided _check_subtask_completion
+    if subtask == 0:
         if dist < subtask_threshold:
             subtask_solved_counter += 1
             if subtask_solved_counter >= subtask_hold_steps:
@@ -96,7 +98,19 @@ def check_subtask_completion(dist, current_reward, subtask, subtask_solved_count
                     prev_reward = current_reward
         else:
             subtask_solved_counter = 0
-        return prev_reward, subtask, subtask_solved_counter
+    elif subtask == 1:
+        # Hardcoded threshold for subtask 1, as in your example
+        if dist < 4.0:
+            subtask_solved_counter += 1
+            if subtask_solved_counter >= subtask_hold_steps:
+                subtask = min(num_subtasks - 1, subtask + 1)
+                subtask_solved_counter = 0
+                if non_decreasing_reward:
+                    prev_reward = current_reward
+        else:
+            subtask_solved_counter = 0
+    # You can add more elifs for further subtasks if needed
+    return prev_reward, subtask, subtask_solved_counter
 
 def main(_):
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -105,51 +119,55 @@ def main(_):
   model.to(device).eval()
   rews = []
   print(FLAGS.experiment_path)
-  if "xirl_embodiment" in FLAGS.experiment_path:
-    print("Using distance to goal reward function")
-    goal_emb = utils.load_pickle(FLAGS.experiment_path, "goal_emb.pkl")
-    distance_scale = utils.load_pickle(FLAGS.experiment_path,
-                                            "distance_scale.pkl")
-    embs = embed(model, downstream_loader, device)
+  # if "xirl_embodiment" in FLAGS.experiment_path:
+  #   print("Using distance to goal reward function")
+  #   goal_emb = utils.load_pickle(FLAGS.experiment_path, "goal_emb.pkl")
+  #   distance_scale = utils.load_pickle(FLAGS.experiment_path,
+  #                                           "distance_scale.pkl")
+  #   embs = embed(model, downstream_loader, device)
   
-    for emb in embs:
-      dist = np.linalg.norm(emb - goal_emb)
-      dist = -1.0 * dist * distance_scale
-      rews.append(dist)
+  #   for emb in embs:
+  #     dist = np.linalg.norm(emb - goal_emb)
+  #     dist = -1.0 * dist * distance_scale
+  #     rews.append(dist)
       
-  elif "holdr" in FLAGS.experiment_path:
-    print("Using HOLDR reward function")
-    subtask_means = utils.load_pickle(FLAGS.experiment_path, "subtask_means.pkl")
-    distance_scale = utils.load_pickle(FLAGS.experiment_path, "distance_scale.pkl")
-    embs = embed(model, downstream_loader, device)
-    subtask = 0
-    non_decreasing_reward = False
-    prev_reward = 0.0
-    subtask_cost = 2.0
-    subtask_threshold = 0.2
-    subtask_hold_steps = 3
-    distance_normalizer = 5
-    subtask_solved_counter = 0
-    prev_reward = 0.0
-    
-    for emb in embs:
-      current_goal_emb = subtask_means[subtask]
-      dist = compute_embedding_distance(emb, current_goal_emb, subtask, distance_scale) 
-      shaping = (len(subtask_means) - subtask) * subtask_cost
-      if non_decreasing_reward:
-        reward = prev_reward + (1.0-dist)
-      else:
-        reward = - (dist+shaping)/distance_normalizer
-      if subtask == 1:
-        print("Subtask 1")
-      elif subtask == 2:
-        print("Subtask 2")
-      print(f"Reward: {reward}, Subtask: {subtask}, Distance: {dist}, Shaping: {shaping}")
-      rews.append(reward)      
-      prev_reward, subtask, subtask_solved_counter = check_subtask_completion(
-          dist, reward, subtask, subtask_solved_counter,
-          subtask_threshold, subtask_hold_steps,
-          non_decreasing_reward, len(subtask_means))
+  # elif "holdr" in FLAGS.experiment_path:
+  print("Using HOLDR reward function")
+  subtask_means = utils.load_pickle(FLAGS.experiment_path, "subtask_means.pkl")
+  distance_scale = utils.load_pickle(FLAGS.experiment_path, "distance_scale.pkl")
+  embs = embed(model, downstream_loader, device)
+  subtask = 0
+  non_decreasing_reward = False
+  prev_reward = 0.0
+  subtask_cost = 3.0
+  subtask_threshold = 5.5
+  subtask_hold_steps = 3
+  distance_normalizer = 5
+  subtask_solved_counter = 0
+  prev_reward = 0.0
+  
+  for emb in embs:
+    current_goal_emb = subtask_means[subtask]
+    dist = compute_embedding_distance(emb, current_goal_emb, subtask, distance_scale) 
+    shaping = (len(subtask_means) - subtask) * subtask_cost
+    # if non_decreasing_reward:
+    #   reward = prev_reward + (1.0-dist)
+    # else:
+    #   reward = - (dist+shaping)/distance_normalizer
+    step_reward = max(0.0, 1.0 - dist / distance_normalizer)
+    bonus_reward = subtask * subtask_cost
+    reward = step_reward + bonus_reward
+    reward = (reward/6.0) - 1.0
+    if subtask == 1:
+      print("Subtask 1")
+    elif subtask == 2:
+      print("Subtask 2")
+    print(f"Reward: {reward}, Subtask: {subtask}, Distance: {dist}, Shaping: {shaping}")
+    rews.append(reward)      
+    prev_reward, subtask, subtask_solved_counter = check_subtask_completion(
+        dist, reward, subtask, subtask_solved_counter,
+        subtask_threshold, subtask_hold_steps,
+        non_decreasing_reward, len(subtask_means))
       
   # Save reward plot
   plt.figure()

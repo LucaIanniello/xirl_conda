@@ -95,7 +95,7 @@ def main(_):
   utils.setup_experiment(exp_dir, config, FLAGS.resume)
   
   if FLAGS.wandb:
-    wandb.init(project="EgocentricPretrain", group="Experiment11", name="Experiment11", mode="online")
+    wandb.init(project="EgocentricPretrainTrain", group="Experiment18_d", name="Experiment18_d", mode="online")
     wandb.config.update(FLAGS)
     wandb.run.log_code(".")
     wandb.config.update(config.to_dict(), allow_val_change=True)
@@ -204,7 +204,8 @@ def main(_):
 
       if done:
         observation, done = env.reset(), False
-        if "holdr" in config.reward_wrapper.pretrained_path:
+        if "holdr" in config.reward_wrapper.type:
+          # print("Resetting buffer and environment state.")
           buffer.reset_state()
           env.reset_state()
 

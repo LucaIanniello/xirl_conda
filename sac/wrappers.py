@@ -334,8 +334,8 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         self,
         subtask_means,
         distance_scale,
-        subtask_threshold=5.5,
-        subtask_cost=4.0,
+        subtask_threshold=5.0,
+        subtask_cost=3.0,
         subtask_hold_steps=3,
         **base_kwargs,
     ):
@@ -410,12 +410,15 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         # if self._non_decreasing_reward:
         # reward = self._prev_reward + (1.0 - dist)
         # else:
-        #reward = - max(0.0, dist - goal_dist) / self._distance_normalizer
+        # reward = - max(0.0, dist - goal_dist) / self._distance_normalizer
         # reward = - (dist + shaping) / self._distance_normalizer
         
-        step_reward = 1.0 - dist / self._distance_normalizer
+        step_reward = max(0.0, 1.0 - dist / self._distance_normalizer)
         bonus_reward = self._subtask * self._subtask_cost
         reward = step_reward + bonus_reward
+        
+        #Normalization
+        reward = (reward / 6.0) - 1.0
             
         # if self._subtask == 1:
         #         print("Subtask 1 completed, reward:", reward)

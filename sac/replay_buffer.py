@@ -22,6 +22,7 @@ import abc
 import collections
 from typing import Optional, Tuple
 
+import pdb
 import cv2
 import numpy as np
 import torch
@@ -239,8 +240,8 @@ class ReplayBufferHOLDR(ReplayBufferLearnedReward):
         self,
         subtask_means,
         distance_scale,
-        subtask_threshold=5.5,
-        subtask_cost=4.0,
+        subtask_threshold=5.0,
+        subtask_cost=3.0,
         subtask_hold_steps=3,
         **base_kwargs,
     ):
@@ -283,17 +284,27 @@ class ReplayBufferHOLDR(ReplayBufferLearnedReward):
         return dist
 
     def _check_subtask_completion(self, dist, current_reward):
-        """Check if the current subtask is completed based on the distance."""
+      if self._subtask == 0:
         if dist < self._subtask_threshold:
             self._subtask_solved_counter += 1
             if self._subtask_solved_counter >= self._subtask_hold_steps:
                 self._subtask = min(self._num_subtasks - 1, self._subtask + 1)
                 self._subtask_solved_counter = 0
                 if self._non_decreasing_reward:
-                    self._pred_reward = current_reward
+                    self._prev_reward = current_reward
         else:
             self._subtask_solved_counter = 0
-
+      elif self._subtask == 1:
+        if dist < 4.5:
+            self._subtask_solved_counter += 1
+            if self._subtask_solved_counter >= self._subtask_hold_steps:
+                self._subtask = min(self._num_subtasks - 1, self._subtask + 1)
+                self._subtask_solved_counter = 0
+                if self._non_decreasing_reward:
+                    self._prev_reward = current_reward
+        else:
+            self._subtask_solved_counter = 0
+            
     def _get_reward_from_image(self):
         """Compute the HOLDR-based reward for the current batch of pixels."""
         image_tensors = [self._pixel_to_tensor(i) for i in self.pixels_staging]
@@ -315,13 +326,15 @@ class ReplayBufferHOLDR(ReplayBufferLearnedReward):
             # if self._non_decreasing_reward:
             #     reward = self._pred_reward + (1.0 - dist)
             # else:
-            #     # reward = - (dist + shaping) / self._distance_normalizer
-            #     reward = - max(0.0, dist - goal_dist) / self._distance_normalizer
+            #     reward = - (dist + shaping) / self._distance_normalizer
+            # reward = - max(0.0, dist - goal_dist) / self._distance_normalizer
             
-            step_reward = 1.0 - dist / self._distance_normalizer
+            step_reward = max(0.0, 1.0 - dist / self._distance_normalizer)
             bonus_reward = self._subtask * self._subtask_cost
             reward = step_reward + bonus_reward
+            # reward = (reward / 6.0) - 1.0
                 
+            
             # if self._subtask == 1:
             #     print("Subtask 1 completed, reward:", reward)
             # elif self._subtask == 2:

@@ -139,6 +139,8 @@ class HOLDRTrainer(Trainer):
                 positive = subtask_means[pos_subtask_id]
                 # Negatives: means of all other subtasks except the positive
                 neg_subtask_ids = [sid for sid in all_subtask_ids if sid != pos_subtask_id]
+                
+                # print(f"Positive subtask ID: {pos_subtask_id}, Negatives: {neg_subtask_ids}, Video: {video_name}, frame: {t_int}")
                 if not neg_subtask_ids:
                     continue
                 negatives = torch.stack([subtask_means[sid] for sid in neg_subtask_ids], dim=0)
