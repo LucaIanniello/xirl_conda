@@ -30,5 +30,6 @@ __all__ = [
     "TCNCrossEntropyTrainer",
     "LIFSTrainer",
     "GoalFrameClassifierTrainer",
-    "HOLDRTrainer"
+    "HOLDRTrainer", 
+    "REDSTrainer"
 ]

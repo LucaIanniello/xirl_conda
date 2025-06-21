@@ -92,6 +92,7 @@ MODELS = {
     "resnet18_features": models.Resnet18RawImageNetFeaturesNet,
     "resnet18_linear_ae": models.Resnet18LinearEncoderAutoEncoderNet,
     "resnet50_linear": models.ResNet50,
+    "reds_model": models.REDSRewardModel
 }
 TRAINERS = {
     "tcc": trainers.TCCTrainer,
@@ -99,6 +100,7 @@ TRAINERS = {
     "tcn": trainers.TCNTrainer,
     "goal_classifier": trainers.GoalFrameClassifierTrainer,
     "holdr": trainers.HOLDRTrainer,
+    "reds_reward": trainers.REDSRewardTrainer
 }
 EVALUATORS = {
     "kendalls_tau": evaluators.KendallsTau,
@@ -155,6 +157,8 @@ def model_from_config(config):
   elif config.model.model_type == "resnet18_linear_ae":
     kwargs["embedding_size"] = config.model.embedding_size
   elif config.model.model_type == "resnet50_linear":
+    kwargs["embedding_size"] = config.model.embedding_size
+  elif config.model.model_type == "reds_model":
     kwargs["embedding_size"] = config.model.embedding_size
   return MODELS[config.model.model_type](**kwargs)
 

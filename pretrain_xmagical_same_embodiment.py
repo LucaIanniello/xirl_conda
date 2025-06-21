@@ -39,6 +39,7 @@ ALGO_TO_CONFIG = {
     "goal_classifier": "configs/xmagical/pretraining/classifier.py",
     "raw_imagenet": "configs/xmagical/pretraining/imagenet.py",
     "holdr": "configs/xmagical/pretraining/holdr.py",
+    "reds": "configs/xmagical/pretraining/reds.py",
 }
 # We want to pretrain on the entire demonstrations.
 MAX_DEMONSTRATIONS = -1

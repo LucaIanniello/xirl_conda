@@ -31,6 +31,13 @@ from torch.hub import load_state_dict_from_url
 
 from typing import Dict, Optional
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from typing import Sequence, Callable, Optional
+
+import clip
+from transformers import GPT2Model, GPT2Config
 
 @dataclasses.dataclass
 class SelfSupervisedOutput:
@@ -504,3 +511,119 @@ class ResNet50(SelfSupervisedModel):
         "feats": feats_flat,
         "embs": embs,
     }
+
+class MLP_REDS(nn.Module):
+    def __init__(
+        self,
+        hidden_dims: Sequence[int],
+        activations: Optional[Callable[[torch.Tensor], torch.Tensor]] = F.relu,
+        activate_final: bool = False,
+        dropout_rate: Optional[float] = None,
+        input_dim: Optional[int] = None,
+    ):
+        super().__init__()
+        layers = []
+        dims = [input_dim] + list(hidden_dims) if input_dim is not None else list(hidden_dims)
+        for i in range(len(hidden_dims)):
+            if i == 0 and input_dim is not None:
+                in_dim = input_dim
+            else:
+                in_dim = dims[i]
+            out_dim = dims[i+1] if i+1 < len(dims) else hidden_dims[i]
+            linear = nn.Linear(in_dim, out_dim)
+            nn.init.xavier_uniform_(linear.weight)
+            nn.init.zeros_(linear.bias)
+            layers.append(linear)
+            # Activation and dropout
+            if i + 1 < len(hidden_dims) or activate_final:
+                if activations is not None:
+                    layers.append(nn.ReLU() if activations == F.relu else activations())
+                if dropout_rate is not None:
+                    layers.append(nn.Dropout(dropout_rate))
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.net(x)
+      
+def load_clip_model(model_name="ViT-B/32", device="cuda" if torch.cuda.is_available() else "cpu"):
+    model, preprocess = clip.load(model_name, device=device)
+    return model        
+
+class REDSRewardModel(nn.Module):
+    def __init__(self, embedding_size, fusion="concat", gpt2_layers=2):
+        super().__init__()
+        self.clip_model = load_clip_model()
+        clip_img_dim = self.clip_model.visual.output_dim
+        clip_txt_dim = self.clip_model.text.output_dim
+
+        self.img_proj = MLP_REDS([embedding_size], input_dim=clip_img_dim)
+        self.txt_proj = MLP_REDS([embedding_size], input_dim=clip_txt_dim)
+
+        if fusion == "concat":
+            self.fusion_type = "concat"
+            fusion_dim = embedding_size
+        elif fusion == "sum":
+            self.fusion_type = "sum"
+            fusion_dim = embedding_size
+        else:
+            raise ValueError("Unknown fusion type")
+
+        #TO BE DEFINED
+        gpt2_config = GPT2Config(
+            n_embd=fusion_dim,
+            n_layer=gpt2_layers,
+            n_head=4,
+            n_positions=128,
+            resid_pdrop=0.1,
+            embd_pdrop=0.1,
+            attn_pdrop=0.1,
+        )
+        self.temporal_decoder = GPT2Model(gpt2_config)
+        self.reward_predictor = MLP_REDS(
+            hidden_dims=[embedding_size, 1],
+            activations=F.relu,
+            activate_final=False,
+            dropout_rate=None,
+            input_dim=embedding_size * 2,
+        )
+
+    def encode_text(self, texts):
+        B, T = texts.shape[0], texts.shape[1] if texts.dim() == 3 else 1
+        if texts.dim() == 2:
+            texts = texts.unsqueeze(1)
+        texts_flat = texts.contiguous().view(B * T, -1)
+        feats_txt = self.clip_model.encode_text(texts_flat)
+        feats_txt = self.txt_proj(feats_txt)
+        feats_txt = feats_txt.view(B, T, -1)
+        # Optionally, pool over time or use last frame
+        feats_txt = feats_txt[:, -1, :]  # (B, D)
+        return feats_txt
+
+    def encode_video(self, images):
+        B, T, C, H, W = images.shape
+        images_flat = images.view(B * T, C, H, W)
+        feats_img = self.clip_model.visual(images_flat)
+        feats_img = self.img_proj(feats_img)
+        feats_img = feats_img.view(B, T, -1)
+        # Temporal modeling over image features
+        feats_img_t = feats_img.transpose(0, 1)  # (T, B, D)
+        temporal_out = self.temporal_decoder(inputs_embeds=feats_img_t).last_hidden_state  # (T, B, D)
+        temporal_out = temporal_out.transpose(0, 1)  # (B, T, D)
+        return temporal_out
+
+    def predict_reward(self, video_features, text_feature):
+        # video_features: (B, T, D), text_feature: (B, D)
+        batch_size, seq_length, feat_dim = video_features.shape
+        vid_t = video_features.reshape(batch_size, -1)  # flatten all frames
+        reward_input = torch.cat([vid_t, text_feature], dim=-1)
+        return self.reward_predictor(reward_input)
+
+    def forward(self, images, texts):
+        video_feature = self.encode_video(images)  # (B, T, D)
+        text_feature = self.encode_text(texts)     # (B, D)
+        reward = self.predict_reward(video_feature, text_feature)  # (B, 1)
+        return {
+            "pred_reward": reward,
+            "video_embs": video_feature,
+            "text_embs": text_feature.unsqueeze(1).expand(-1, video_feature.shape[1], -1),  # (B, T, D)
+        }

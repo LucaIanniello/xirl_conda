@@ -332,7 +332,7 @@ class ReplayBufferHOLDR(ReplayBufferLearnedReward):
             step_reward = max(0.0, 1.0 - dist / self._distance_normalizer)
             bonus_reward = self._subtask * self._subtask_cost
             reward = step_reward + bonus_reward
-            # reward = (reward / 6.0) - 1.0
+            reward = (reward / 6.0) - 1.0
                 
             
             # if self._subtask == 1:
