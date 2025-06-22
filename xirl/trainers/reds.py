@@ -2,8 +2,9 @@ import torch
 import torch.nn.functional as F
 import json
 from xirl.trainers.base import Trainer
+import os
 
-class REDSTrainer(Trainer):
+class REDSRewardTrainer(Trainer):
     def __init__(self, model, optimizer, device, config):
         super().__init__(model, optimizer, device, config)
         reds_cfg = getattr(config.loss, "reds", config.loss)
@@ -24,8 +25,8 @@ class REDSTrainer(Trainer):
             loss: scalar tensor
         """
         device = self._device
-        reward_dir = "/path/to/rewards"
-        text_dir = "/path/to/texts"
+        reward_dir = batch["video_name"]
+        text_dir = batch["video_name"]
         # Load ground-truth rewards and texts from files
         gt_rewards, texts = self._load_gt_and_text(batch["video_name"], reward_dir, text_dir, device)
 
@@ -47,16 +48,23 @@ class REDSTrainer(Trainer):
         return self._model.predict_reward(video_features, text_features)
     
     
-    def _load_gt_and_text(self, video_names, reward_dir, text_dir, device):
+    def _load_gt_and_text(self, video_names, device):
         gt_rewards = []
         texts = []
-        for video_name in video_names:
-            reward_path = f"{reward_dir}/{video_name}.json"
-            text_path = f"{text_dir}/{video_name}.json"
+        for video_path in video_names:
+            # Extract the video number (last part of the path)
+            video_number = os.path.basename(video_path)
+            # Build the paths to the reward and text files
+            reward_path = os.path.join(video_path, f"{video_number}_rewards.json")
+            text_path = os.path.join(video_path, f"{video_number}_text.json")
+            # Load rewards and texts
             with open(reward_path, "r") as f:
-                gt_rewards.append(torch.tensor(json.load(f), dtype=torch.float32, device=device))
+                rewards = torch.tensor(json.load(f), dtype=torch.float32, device=device)
             with open(text_path, "r") as f:
-                texts.append(torch.tensor(json.load(f), dtype=torch.long, device=device))
+                text = torch.tensor(json.load(f), dtype=torch.long, device=device)
+            gt_rewards.append(rewards)
+            texts.append(text)
+        # Stack to get (B, T) or (B, T, ...)
         gt_rewards = torch.stack(gt_rewards)
         texts = torch.stack(texts)
         return gt_rewards, texts

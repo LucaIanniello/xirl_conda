@@ -22,6 +22,7 @@ from .tcc import TCCTrainer
 from .tcn import TCNCrossEntropyTrainer
 from .tcn import TCNTrainer
 from .holdr import HOLDRTrainer
+from .reds import REDSRewardTrainer
 
 __all__ = [
     "Trainer",
@@ -31,5 +32,5 @@ __all__ = [
     "LIFSTrainer",
     "GoalFrameClassifierTrainer",
     "HOLDRTrainer", 
-    "REDSTrainer"
+    "REDSRewardTrainer"
 ]
