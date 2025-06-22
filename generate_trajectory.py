@@ -51,7 +51,8 @@ def noisy_step(env, action, rho,
 
 def get_block_positions(states_array):
     state = env.get_state()
-    states_array.append(state)
+    if len(states_array) == 0:
+        states_array.append(state)
     block_positions = {}
     for i, color_name in enumerate(["red","blue","yellow"]):
         base = 2 + i*5
@@ -86,10 +87,10 @@ def move_to(env, target_xy, color, observations_array, actions_array, states_arr
         phi_rel = ((phi - theta_r + np.pi) % (2*np.pi)) - np.pi
         
         if rho < tol and abs(phi_rel) < tol:
-            for i in range(5):
+            for i in range(10):
                 action = np.array([0.0, 0.0, 1.0], dtype=np.float32)
                 actions.append(action)
-                actions_array.append(action)
+                actions_array.append(action.tolist())
                 obs, rew, done, info = env.step(action)
                 observations_array.append(obs)
                 reward_array.append(rew)                
@@ -104,7 +105,7 @@ def move_to(env, target_xy, color, observations_array, actions_array, states_arr
         (obs, rew, done, info), noisy_act = noisy_step(env, action, rho)
         observations_array.append(obs)
         reward_array.append(rew)
-        actions_array.append(noisy_act)
+        actions_array.append(noisy_act.tolist())
 
         # 4) record the *noisy* command
         actions.append(noisy_act)
@@ -130,7 +131,7 @@ def push_to_goal(env, target_x, target_y, goal_y_min, goal_y_max, color, observa
         actions.append(np.array(action, dtype=np.float32))
         obs, rew, done, info = env.step(actions[-1])
         observations_array.append(obs)
-        actions_array.append(actions[-1])
+        actions_array.append(actions[-1].tolist())
         reward_array.append(rew)
     if done:
         print("Env terminated early.")
@@ -236,7 +237,7 @@ def generate_video(env, out_path: Path, video_id: str, subgoal_frames_dict: dict
 
 
 if __name__ == "__main__":
-    root_dir = Path("new_env_dataset")
+    root_dir = Path("/home/lianniello/new_env_dataset")
     videos_root = root_dir / "videos"
     frames_root = root_dir / "frames" / "train" / "gripper"
     subgoal_frames_dict = {}
@@ -250,13 +251,18 @@ if __name__ == "__main__":
     colors_set = [en.ShapeColor.YELLOW, en.ShapeColor.BLUE, en.ShapeColor.RED]
 
 
-    for i in range(1110,1111):
+    for i in range(1100,1105):
         video_id = f"{i}"
         random.shuffle(colors_set)
         # if colors_set[1] == en.ShapeColor.BLUE:
         #     colors_set[1] = colors_set[2]
         #     colors_set[2] = en.ShapeColor.BLUE
         
+        observations = []
+        actions = []
+        states = []
+        rewards = []
+    
         env = SweepToTopEnv(
             robot_cls=NonHolonomicGripperEmbodiment,
             use_state=True, 

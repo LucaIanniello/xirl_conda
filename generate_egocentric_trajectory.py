@@ -67,9 +67,9 @@ def replicate_actions(env, action_file, save_dir: Path):
     frames = []
 
     for i, a in enumerate(actions):
-        frame = env.render(mode="rgb_array")
-        frames.append(frame)
         if i % 10 == 0:
+            frame = env.render(mode="rgb_array")
+            frames.append(frame)
             imageio.imwrite(str(save_dir / f"{count}.png"), frame)
             count += 1
         env.step(a)
@@ -82,13 +82,13 @@ def replicate_actions(env, action_file, save_dir: Path):
 
 
 if __name__ == "__main__":
-    root_dir = Path("egocentric_dataset")
+    root_dir = Path("/home/lianniello/egocentric_dataset")
     videos_root = root_dir / "videos"
     train_ego_root = root_dir / "frames" / "train" / "gripper"
     validation_ego_root = root_dir / "frames" / "valid" / "gripper"
     
-    train_allo_root = Path("new_env_dataset/frames/train/gripper")
-    validation_allo_root = Path("new_env_dataset/frames/valid/gripper")
+    train_allo_root = Path("/home/lianniello/new_env_dataset/frames/train/gripper")
+    validation_allo_root = Path("/home/lianniello/new_env_dataset/frames/valid/gripper")
     
     for repo_dir in train_allo_root.iterdir():
         colors_set = []

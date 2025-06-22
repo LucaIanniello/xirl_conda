@@ -2,11 +2,11 @@ import os
 import shutil
 
 # Root directories
-source_root = "new_env_dataset/frames"
-target_root = "egocentric_dataset/frames"
+source_root = "/home/lianniello/new_env_dataset/frames"
+target_root = "/home/lianniello/egocentric_dataset/frames"
 
 # File suffixes to copy
-suffixes = ["_rewards.json"]
+suffixes = ["_observations.json", "_actions.json", "_states.json", "_rewards.json"]
 
 # Process both train and valid splits
 for split in ["train/gripper", "valid/gripper"]:
