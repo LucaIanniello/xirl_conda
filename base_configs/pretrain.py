@@ -206,6 +206,13 @@ def get_config():
   config.loss.holdr = ml_collections.ConfigDict()
   config.loss.holdr.temperature = 0.1
   
+  ## REDS loss.
+  config.loss.reds = ml_collections.ConfigDict()
+  config.loss.reds.lambda_epic = 1.0
+  config.loss.reds.lambda_supcon = 1.0
+  config.loss.reds.supcon_temperature = 0.1
+  config.loss.reds.epic_eps = 5e-2
+  config.loss.reds.lambda_epic_reg = 1.0
   
 
   # ============================================== #

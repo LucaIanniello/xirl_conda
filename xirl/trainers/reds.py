@@ -1,3 +1,4 @@
+from matplotlib import text
 import torch
 import torch.nn.functional as F
 import json
@@ -8,13 +9,98 @@ class REDSRewardTrainer(Trainer):
     def __init__(self, model, optimizer, device, config):
         super().__init__(model, optimizer, device, config)
         reds_cfg = getattr(config.loss, "reds", config.loss)
+        
+        self._device = device if device is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.temperature = getattr(reds_cfg, "supcon_temperature", 0.1)
         self.lambda_supcon = getattr(reds_cfg, "lambda_supcon", 1.0)
         self.lambda_epic = getattr(reds_cfg, "lambda_epic", 1.0)
         self.epic_eps = getattr(reds_cfg, "epic_eps", 5e-2)
         self.lambda_epic_reg = getattr(reds_cfg, "lambda_epic_reg", 1.0)
+        
+    def train_one_iter(self, batch):
+        """Single forward + backward pass of the model.
 
-    def compute_loss(self, batch):
+        Args:
+        batch: The output of a VideoDataset dataloader.
+
+        Returns:
+        A dict of loss values.
+        """
+        device = self._device
+        self._model.train()
+
+        self._optimizer.zero_grad()
+
+        # Forward pass to compute embeddings.
+        frames = batch["frames"].to(self._device)
+        # Load ground-truth rewards and texts from files
+        gt_rewards, texts, video_names= self._load_gt_and_text(batch, batch["video_name"], device)
+        
+        reward, video_embs, text_embs = self._model(frames, texts, video_names)
+        # out_dict = self._model(frames)
+
+        # Compute losses.
+        loss = self.compute_loss(video_embs, text_embs, reward, gt_rewards)
+        # aux_loss = self.compute_auxiliary_loss(out, batch)
+        # loss = self.compute_loss(out_dict["embs"], batch)
+        # aux_loss = self.compute_auxiliary_loss(out_dict, batch)
+        total_loss = loss
+
+        # Backwards pass + optimization step.
+        total_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=1.0)
+        self._optimizer.step()
+    
+        return {
+            "train/base_loss": loss,
+            "train/total_loss": total_loss,
+        }
+
+    @torch.no_grad()
+    def eval_num_iters(
+        self,
+        valid_loader,
+        eval_iters = None,
+    ):
+        """Compute the loss with the model in `eval()` mode.
+
+        Args:
+            valid_loader: The validation data loader.
+            eval_iters: The number of time to call `next()` on the data iterator. Set
+                to None to evaluate on the whole validation set.
+
+        Returns:
+            A dict of validation losses.
+        """
+        device = self._device
+        
+        self._model.eval()
+
+        val_base_loss = 0.0
+        val_aux_loss = 0.0
+        it_ = 0
+        for batch_idx, batch in enumerate(valid_loader):
+            if eval_iters is not None and batch_idx >= eval_iters:
+                break
+
+            frames = batch["frames"].to(self._device)
+            # Load ground-truth rewards and texts from files
+            gt_rewards, texts, video_name = self._load_gt_and_text(batch, batch["video_name"], device)
+            
+            reward, video_embs, text_embs = self._model(frames, texts, video_name)
+            # out_dict = self._model(frames)
+            val_base_loss += self.compute_loss(video_embs, text_embs, reward, gt_rewards)
+            # val_base_loss += self.compute_loss(out_dict["embs"], batch)
+            # val_aux_loss += self.compute_auxiliary_loss(out_dict, batch)
+            it_ += 1
+        val_base_loss /= it_
+
+        return {
+            "valid/base_loss": val_base_loss,
+            "valid/total_loss": val_base_loss + val_aux_loss,
+        }
+
+    def compute_loss(self, video_embs, text_embs, reward, gt_rewards):
         """
         Args:
             batch: dict with keys:
@@ -24,20 +110,8 @@ class REDSRewardTrainer(Trainer):
         Returns:
             loss: scalar tensor
         """
-        device = self._device
-        reward_dir = batch["video_name"]
-        text_dir = batch["video_name"]
-        # Load ground-truth rewards and texts from files
-        gt_rewards, texts = self._load_gt_and_text(batch["video_name"], reward_dir, text_dir, device)
-
-        # Forward pass through the model to get predicted rewards and embeddings
-        out = self._model(batch["images"].to(device), texts)
-        pred_reward = out["pred_reward"].squeeze(-1)  # (B,) or (B, T)
-        video_embs = out["video_embs"]                # (B, T, D)
-        text_embs = out["text_embs"]                  # (B, T, D)
-
         # Compute losses
-        epic_loss = self._compute_epic_loss(video_embs, text_embs, gt_rewards)
+        epic_loss = self._compute_epic_loss(reward, gt_rewards)
         supcon_loss = self._compute_supcon_loss(video_embs, text_embs)
 
         # Combine losses
@@ -48,54 +122,39 @@ class REDSRewardTrainer(Trainer):
         return self._model.predict_reward(video_features, text_features)
     
     
-    def _load_gt_and_text(self, video_names, device):
+    def _load_gt_and_text(self, batch, video_names, device):
         gt_rewards = []
         texts = []
-        for video_path in video_names:
-            # Extract the video number (last part of the path)
+        for idx, video_path in enumerate(video_names):
             video_number = os.path.basename(video_path)
-            # Build the paths to the reward and text files
-            reward_path = os.path.join(video_path, f"{video_number}_rewards.json")
+            reward_path = os.path.join(video_path, f"{video_number}_sampled_rewards.json")
             text_path = os.path.join(video_path, f"{video_number}_text.json")
-            # Load rewards and texts
             with open(reward_path, "r") as f:
                 rewards = torch.tensor(json.load(f), dtype=torch.float32, device=device)
             with open(text_path, "r") as f:
-                text = torch.tensor(json.load(f), dtype=torch.long, device=device)
+                text = json.load(f)
+            # Pad rewards and texts to match the number of frames in batch["frames"]
+            n_frames = batch["frames"].shape[1]  # get the number of frames for this video in the batch (should be batch["frames"].shape[1])
+            if len(rewards) < n_frames:
+                pad_len = n_frames - len(rewards)
+                rewards = torch.cat([rewards, torch.zeros(pad_len, device=device)])
+                text = text + [""] * pad_len
             gt_rewards.append(rewards)
             texts.append(text)
-        # Stack to get (B, T) or (B, T, ...)
-        gt_rewards = torch.stack(gt_rewards)
-        texts = torch.stack(texts)
-        return gt_rewards, texts
+        return gt_rewards, texts,video_names
 
-    def _compute_epic_loss(self, video_features, text_features, gt_reward):
-        """
-        Computes the EPIC loss (Pearson distance) between predicted and ground-truth rewards.
-        Args:
-            pred_reward: (B, T) or (B,)
-            gt_reward: (B, T) or (B,)
-        Returns:
-            Scalar tensor
-        """
-        # 1. Predict rewards for current and canonical
-        reward = self.extract_score(video_features, text_features).squeeze(-1)      # (B,)
-        # 3. Pearson distance
-        return self.compute_pearson_distance(reward.flatten(), gt_reward.flatten())
+    def _compute_epic_loss(self, pred_rewards, gt_rewards):
+        # pred_rewards, gt_rewards: lists of (T, 1) and (T,)
+        # masks: list of (T,) bool tensors
+        pred_flat = torch.cat([p.view(-1) for p in pred_rewards])
+        gt_flat = torch.cat([g.view(-1) for g in gt_rewards])
+        return self.compute_pearson_distance(pred_flat, gt_flat)
 
     def _compute_supcon_loss(self, video_embs, text_embs):
-        """
-        Computes supervised contrastive loss between video and text embeddings.
-        Args:
-            video_embs: (B, T, D)
-            text_embs: (B, T, D)
-        Returns:
-            Scalar tensor
-        """
-        # Use last frame for contrastive loss
-        video_embs_last = video_embs[:, -1, :]  # (B, D)
-        text_embs_last = text_embs[:, -1, :]    # (B, D)
-        labels = torch.arange(video_embs_last.size(0), device=video_embs_last.device)
+        # video_embs, text_embs: lists of (T, D)
+        video_embs_last = torch.stack([v[-1] for v in video_embs])  # (B, D)
+        text_embs_last = torch.stack([t[-1] for t in text_embs])    # (B, D)
+        labels = torch.arange(len(video_embs_last), device=video_embs_last.device)
         logits = torch.matmul(F.normalize(video_embs_last, dim=-1), F.normalize(text_embs_last, dim=-1).T) / self.temperature
         loss = F.cross_entropy(logits, labels)
         return loss

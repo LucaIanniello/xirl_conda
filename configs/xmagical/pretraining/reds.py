@@ -5,11 +5,11 @@ def get_config():
 
     config = _get_config()
 
-    config.algorithm = "reds"
+    config.algorithm = "reds_reward"
     config.optim.train_max_iters = 10000
     config.frame_sampler.strategy = "uniform"
     config.frame_sampler.uniform_sampler.offset = 0
-    config.frame_sampler.num_frames_per_sequence = 40
+    config.frame_sampler.num_frames_per_sequence = 50
 
     # Model settings
     config.model.model_type = "reds_model"  

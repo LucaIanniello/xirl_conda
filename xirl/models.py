@@ -38,6 +38,7 @@ from typing import Sequence, Callable, Optional
 
 import clip
 from transformers import GPT2Model, GPT2Config
+import pdb
 
 @dataclasses.dataclass
 class SelfSupervisedOutput:
@@ -549,12 +550,26 @@ def load_clip_model(model_name="ViT-B/32", device="cuda" if torch.cuda.is_availa
     model, preprocess = clip.load(model_name, device=device)
     return model        
 
+@dataclasses.dataclass
+class REDSInferOutput:
+    embs: np.ndarray
+
+    def numpy(self):
+        # If embs is a torch tensor, convert to numpy
+        embs = self.embs
+        if isinstance(embs, torch.Tensor):
+            embs = embs.cpu().detach().numpy()
+        return REDSInferOutput(embs=embs)
+    
 class REDSRewardModel(nn.Module):
-    def __init__(self, embedding_size, fusion="concat", gpt2_layers=2):
+    def __init__(self, embedding_size, fusion="concat", gpt2_layers=2,  num_ctx_frames=None, normalize_embeddings=None, learnable_temp=None, device=None, **kwargs):
         super().__init__()
         self.clip_model = load_clip_model()
+        for param in self.clip_model.parameters():
+          param.requires_grad = False
+        self.device = device if device is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
         clip_img_dim = self.clip_model.visual.output_dim
-        clip_txt_dim = self.clip_model.text.output_dim
+        clip_txt_dim = self.clip_model.text_projection.shape[1]
 
         self.img_proj = MLP_REDS([embedding_size], input_dim=clip_img_dim)
         self.txt_proj = MLP_REDS([embedding_size], input_dim=clip_txt_dim)
@@ -588,42 +603,80 @@ class REDSRewardModel(nn.Module):
         )
 
     def encode_text(self, texts):
-        B, T = texts.shape[0], texts.shape[1] if texts.dim() == 3 else 1
-        if texts.dim() == 2:
-            texts = texts.unsqueeze(1)
-        texts_flat = texts.contiguous().view(B * T, -1)
-        feats_txt = self.clip_model.encode_text(texts_flat)
-        feats_txt = self.txt_proj(feats_txt)
-        feats_txt = feats_txt.view(B, T, -1)
-        # Optionally, pool over time or use last frame
-        feats_txt = feats_txt[:, -1, :]  # (B, D)
-        return feats_txt
+      # texts: list of list of strings, shape [B, variable T]
+      feats_txt_list = []
+      for video in texts:
+          tokens = clip.tokenize(video).to(self.device)  # (T, context_length)
+          feats_txt = self.clip_model.encode_text(tokens)  # (T, D)
+          feats_txt = feats_txt.float()
+          feats_txt = self.txt_proj(feats_txt)  # (T, D)
+          feats_txt_list.append(feats_txt)
+      # feats_txt_list: list of (T, D)
+      return feats_txt_list
 
     def encode_video(self, images):
-        B, T, C, H, W = images.shape
-        images_flat = images.view(B * T, C, H, W)
-        feats_img = self.clip_model.visual(images_flat)
-        feats_img = self.img_proj(feats_img)
-        feats_img = feats_img.view(B, T, -1)
-        # Temporal modeling over image features
-        feats_img_t = feats_img.transpose(0, 1)  # (T, B, D)
-        temporal_out = self.temporal_decoder(inputs_embeds=feats_img_t).last_hidden_state  # (T, B, D)
-        temporal_out = temporal_out.transpose(0, 1)  # (B, T, D)
-        return temporal_out
+      B, T, C, H, W = images.shape
+      images_flat = images.view(B * T, C, H, W)
+      # Resize to 224x224 for CLIP ViT-B/32
+      images_flat = F.interpolate(images_flat, size=(224, 224), mode="bilinear", align_corners=False)
+      # Ensure input dtype matches CLIP model weights
+      if self.clip_model.visual.conv1.weight.dtype == torch.float16:
+          images_flat = images_flat.half()
+      else:
+          images_flat = images_flat.float()
+      feats_img = self.clip_model.visual(images_flat)
+      feats_img = feats_img.float()  # <-- ADD THIS LINE to ensure float32 for MLP
+      feats_img = self.img_proj(feats_img)
+      feats_img = feats_img.view(B, T, -1)
+      # Temporal modeling over image features
+      feats_img_t = feats_img.transpose(0, 1)  # (T, B, D)
+      temporal_out = self.temporal_decoder(inputs_embeds=feats_img_t).last_hidden_state  # (T, B, D)
+      temporal_out = temporal_out.transpose(0, 1)  # (B, T, D)
+      return temporal_out
 
-    def predict_reward(self, video_features, text_feature):
-        # video_features: (B, T, D), text_feature: (B, D)
-        batch_size, seq_length, feat_dim = video_features.shape
-        vid_t = video_features.reshape(batch_size, -1)  # flatten all frames
-        reward_input = torch.cat([vid_t, text_feature], dim=-1)
-        return self.reward_predictor(reward_input)
+    def predict_reward(self, video_features, text_features):
+      # video_features: list of (T, D), text_features: list of (T, D) or (T, D)
+      rewards = []
+      for vid_feat, txt_feat in zip(video_features, text_features):
+          # Optionally, you may want to use per-frame text features or a summary
+          # Here, we assume per-frame
+          reward_input = torch.cat([vid_feat, txt_feat], dim=-1)  # (T, 2D)
+          reward = self.reward_predictor(reward_input)  # (T, 1)
+          rewards.append(reward)
+      return rewards  # list of (T, 1)
 
-    def forward(self, images, texts):
-        video_feature = self.encode_video(images)  # (B, T, D)
-        text_feature = self.encode_text(texts)     # (B, D)
-        reward = self.predict_reward(video_feature, text_feature)  # (B, 1)
-        return {
-            "pred_reward": reward,
-            "video_embs": video_feature,
-            "text_embs": text_feature.unsqueeze(1).expand(-1, video_feature.shape[1], -1),  # (B, T, D)
-        }
+    def forward(self, images, texts, video_names=None):
+      video_feature = self.encode_video(images)
+      text_feature = self.encode_text(texts)
+      for idx, (v, t) in enumerate(zip(video_feature, text_feature)):
+          if v.shape[0] != t.shape[0]:
+              vid_name = video_names[idx] if video_names is not None else f"index {idx}"
+              print(f"Frame/text mismatch for video: {vid_name} ({v.shape[0]} vs {t.shape[0]})")
+              assert v.shape[0] == t.shape[0], f"Frame/text mismatch: {v.shape[0]} vs {t.shape[0]}"
+      reward = self.predict_reward(video_feature, text_feature)
+      return reward, video_feature, text_feature
+    
+    @torch.no_grad()
+    def infer(self, images, texts=None, video_names=None, method="last"):
+        """
+        Inference method for downstream evaluation.
+        Args:
+            images: (B, T, C, H, W) tensor
+            texts: optional, list of list of strings
+            video_names: optional, list of video names
+            method: "last" or "mean" for pooling over frames
+        Returns:
+            Numpy array of video embeddings (B, D)
+        """
+        self.eval()
+        video_embs = self.encode_video(images)  # list of (T, D) or tensor (B, T, D)
+        # If encode_video returns a tensor, convert to list for consistency
+        if isinstance(video_embs, torch.Tensor):
+            video_embs = [v for v in video_embs]
+        if method == "last":
+            embs = torch.stack([v[-1] for v in video_embs])  # (B, D)
+        elif method == "mean":
+            embs = torch.stack([v.mean(dim=0) for v in video_embs])  # (B, D)
+        else:
+            raise ValueError("Unknown method for infer: choose 'last' or 'mean'")
+        return REDSInferOutput(embs=embs.cpu())
