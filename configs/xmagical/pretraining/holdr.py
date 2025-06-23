@@ -21,9 +21,9 @@ def get_config():
   
   config.loss.holdr.temperature = 1.0
   config.loss.holdr.subtask_json_path = "/home/lianniello/egocentric_dataset/subgoal_frames.json"
-  config.loss.holdr.distance_subtask_means_weight = 1.0
-  config.loss.holdr.distance_frames_before_subtask_weight = 0.5
-  config.loss.holdr.contrastive_weight = 0.4
-  config.loss.holdr.hodlr_loss_weight = 0.6
+  config.loss.holdr.distance_subtask_means_weight = 0.2
+  config.loss.holdr.distance_frames_before_subtask_weight = 0.2
+  config.loss.holdr.contrastive_weight = 0.3
+  config.loss.holdr.hodlr_loss_weight = 0.3
 
   return config

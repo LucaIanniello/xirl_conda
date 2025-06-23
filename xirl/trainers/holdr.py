@@ -85,6 +85,19 @@ class HOLDRTrainer(Trainer):
         for subtask_id, emb_list in subtask_embeddings.items():
             if len(emb_list) > 0:
                 subtask_means[subtask_id] = torch.stack(emb_list, dim=0).mean(dim=0)
+                
+        for subtask_id, emb_list in subtask_embeddings.items():
+            if len(emb_list) < 2:
+                continue
+            embs_tensor = torch.stack(emb_list, dim=0)
+            mean_emb = embs_tensor.mean(dim=0)
+            for e in emb_list:
+                target = torch.tensor([1.0], device=e.device)  # label: similar
+                distance_subtask_means_loss += F.cosine_embedding_loss(
+                    e.unsqueeze(0),
+                    mean_emb.unsqueeze(0),
+                    target
+                )
         
         
         # --- N-pair contrastive loss ---
@@ -165,5 +178,12 @@ class HOLDRTrainer(Trainer):
             
             
         holdr_loss /= B
-                
-        return self.hodlr_loss_weight * holdr_loss + self.contrastive_weight * n_pair_loss
+        total_loss = self.hodlr_loss_weight * holdr_loss + self.contrastive_weight * n_pair_loss + self.distance_subtask_means_weight * distance_subtask_means_loss + self.distance_frames_before_subtask_weight * distance_frames_before_subtask_loss
+        return holdr_loss
+        # return {
+        #     "holdr_loss": holdr_loss,
+        #     "n_pair_loss": n_pair_loss,
+        #     "distance_subtask_means_loss": distance_subtask_means_loss,
+        #     "distance_frames_before_subtask_loss": distance_frames_before_subtask_loss,
+        #     "total_loss": total_loss
+        # }
