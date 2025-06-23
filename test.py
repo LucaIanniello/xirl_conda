@@ -1,22 +1,40 @@
-import gym
-import magical
+import os
+import json
+from pathlib import Path
 
-# magical.register_envs() must be called before making any Gym envs
-magical.register_envs()
+def sample_rewards_by_folder_name(dataset_root, step=10):
+    for video_folder in sorted(os.listdir(dataset_root)):
+        folder_path = Path(dataset_root) / video_folder
+        if not folder_path.is_dir() or not video_folder.isdigit():
+            continue
 
-# creating a demo variant for one task
-env = gym.make('FindDupe-Demo-v0')
-env.reset()
-env.render(mode='human')
-env.close()
+        video_id = video_folder
+        reward_filename = f"{video_id}_states.json"
+        reward_path = folder_path / reward_filename
 
-# We can also make the test variant of the same environment, or add a
-# preprocessor to the environment. In this case, we are creating a
-# TestShape variant of the original environment, and applying the
-# LoRes4E preprocessor to observations. LoRes4E stacks four
-# egocentric frames together and downsamples them to 96x96.
-env = gym.make('FindDupe-TestShape-LoRes4E-v0')
-init_obs = env.reset()
-print('Observation type:', type(obs))  # np.ndarray
-print('Observation shape:', obs.shape)  # (96, 96, 3)
-env.close()
+        # Output file: e.g., "10_sampled_rewards.json"
+        output_filename = f"{video_id}_sampled_states.json"
+        output_path = folder_path / output_filename
+
+        if not reward_path.exists():
+            print(f"⚠️ Missing file: {reward_filename} in folder {video_folder}")
+            continue
+
+        # Load original rewards
+        with open(reward_path, "r") as f:
+            rewards = json.load(f)
+
+        # Sample rewards every `step`
+        sampled_rewards = rewards[::step]
+
+        sampled_rewards.append(rewards[-1])
+
+        # Save sampled rewards
+        with open(output_path, "w") as f:
+            json.dump(sampled_rewards, f)
+
+        print(f"✅ {video_folder}: {len(sampled_rewards)} rewards saved to {output_filename}")
+
+# Example usage
+dataset_root = "/home/lianniello/egocentric_dataset/frames/valid/gripper"  # Change this path
+sample_rewards_by_folder_name(dataset_root)

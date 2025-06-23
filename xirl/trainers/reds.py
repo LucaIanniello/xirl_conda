@@ -144,11 +144,25 @@ class REDSRewardTrainer(Trainer):
         return gt_rewards, texts,video_names
 
     def _compute_epic_loss(self, pred_rewards, gt_rewards):
-        # pred_rewards, gt_rewards: lists of (T, 1) and (T,)
-        # masks: list of (T,) bool tensors
-        pred_flat = torch.cat([p.view(-1) for p in pred_rewards])
-        gt_flat = torch.cat([g.view(-1) for g in gt_rewards])
-        return self.compute_pearson_distance(pred_flat, gt_flat)
+        # pred_rewards: list of (T, 1)
+        # gt_rewards: list of (T,)
+        batch_size = len(pred_rewards)
+        losses = []
+        for i in range(batch_size):
+            # Flatten current trajectory
+            pred_i = pred_rewards[i].view(-1)
+            gt_i = gt_rewards[i].view(-1)
+            # Canonical set: all other trajectories in the batch
+            pred_canon = torch.cat([pred_rewards[j].view(-1) for j in range(batch_size) if j != i])
+            gt_canon = torch.cat([gt_rewards[j].view(-1) for j in range(batch_size) if j != i])
+            # Center by canonical mean
+            pred_centered = pred_i - pred_canon.mean()
+            gt_centered = gt_i - gt_canon.mean()
+            # Pearson distance between centered rewards
+            loss = self.compute_pearson_distance(pred_centered, gt_centered)
+            losses.append(loss)
+        # Average over batch
+        return torch.stack(losses).mean()
 
     def _compute_supcon_loss(self, video_embs, text_embs):
         # video_embs, text_embs: lists of (T, D)

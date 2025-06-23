@@ -418,7 +418,7 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         reward = step_reward + bonus_reward
         
         #Normalization
-        reward = (reward / 6.0) - 1.0
+        # reward = (reward / 6.0) - 1.0
             
         # if self._subtask == 1:
         #         print("Subtask 1 completed, reward:", reward)

@@ -164,7 +164,7 @@ def main(_):
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
   model, downstream_loader = setup()
   model.to(device).eval()
-  subgoal_file_path = "/home/lianniello/xirl_thesis/xirl_conda/egocentric_dataset/subgoal_frames.json"
+  subgoal_file_path = "/home/lianniello/egocentric_dataset/subgoal_frames.json"
   
   subgoal_data = read_subgoal_from_file(subgoal_file_path)
   subtask_means, distance_scale = embed_subtasks(model, downstream_loader, device, subgoal_data)

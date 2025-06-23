@@ -78,7 +78,7 @@ def get_config():
   config.sac.init_temperature = 0.1
   config.sac.alpha_lr = 1e-5
   config.sac.alpha_betas = [0.9, 0.999]
-  config.sac.actor_lr = 1e-4
+  config.sac.actor_lr = 1e-5
   config.sac.actor_betas = [0.9, 0.999]
   config.sac.actor_update_frequency = 1
   config.sac.critic_lr = 1e-5
