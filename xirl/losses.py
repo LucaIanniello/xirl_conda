@@ -37,8 +37,9 @@ def one_hot(y, K, smooth_eps = 0):  # pylint: disable=invalid-name
   """
   assert 0 <= smooth_eps <= 1
   assert y.ndim == 1, "Label tensor must be rank 1."
-  y_hot = torch.eye(K)[y] * (1 - smooth_eps) + (smooth_eps / (K - 1))
-  return y_hot.to(y.device)
+  eye = torch.eye(K, device=y.device)  # <-- FIX: create on same device as y
+  y_hot = eye[y] * (1 - smooth_eps) + (smooth_eps / (K - 1))
+  return y_hot
 
 
 def cross_entropy(

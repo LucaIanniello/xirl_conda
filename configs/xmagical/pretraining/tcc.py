@@ -27,7 +27,7 @@ def get_config():
   config.optim.train_max_iters = 10_000
   config.frame_sampler.strategy = "uniform"
   config.frame_sampler.uniform_sampler.offset = 0
-  config.frame_sampler.num_frames_per_sequence = 40
+  config.frame_sampler.num_frames_per_sequence = 50
   config.model.model_type = "resnet18_linear"
   ##TO BE CHANGED FOR HOLDR ARCHITECTURE
   #config.model.model_type = "resnet50_linear"
