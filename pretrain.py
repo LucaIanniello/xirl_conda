@@ -64,7 +64,7 @@ def main(_):
     return
   
   if FLAGS.wandb:
-    wandb.init(project="EGOTCC", group=FLAGS.experiment_name, name=FLAGS.experiment_name, mode="online")
+    wandb.init(project="Allocentric", group="Pretrain", name="StandardXIRL", mode="online")
     wandb.config.update(FLAGS)
     wandb.run.log_code(".")
     wandb.config.update(config.to_dict(), allow_val_change=True)
@@ -179,11 +179,25 @@ def main(_):
               "step": global_step,
               "epoch": epoch,
           }, step=global_step)
+          if "reds" in FLAGS.experiment_name:
+            wandb.log({
+                "reds/epic_loss": train_loss["train/epic_loss"].item(),
+                "reds/supcon_loss": train_loss["train/supcon_loss"].item(),
+                "step": global_step,
+                "epoch": epoch,
+            }, step=global_step)
           wandb.log({
             "evaluation loss": valid_loss["valid/total_loss"].item(),
             "step": global_step,
             "epoch": epoch,
           }, step=global_step)
+          if "reds" in FLAGS.experiment_name:
+            wandb.log({
+                "reds/epic_loss": valid_loss["valid/epic_loss"].item(),
+                "reds/supcon_loss": valid_loss["valid/supcon_loss"].item(),
+                "step": global_step,
+                "epoch": epoch,
+            }, step=global_step)
         stopwatch.reset()
       epoch += 1
 

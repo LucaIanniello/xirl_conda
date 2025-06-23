@@ -40,7 +40,7 @@ class REDSRewardTrainer(Trainer):
         # out_dict = self._model(frames)
 
         # Compute losses.
-        loss = self.compute_loss(video_embs, text_embs, reward, gt_rewards)
+        loss, epic_loss, supcon_loss = self.compute_loss(video_embs, text_embs, reward, gt_rewards)
         # aux_loss = self.compute_auxiliary_loss(out, batch)
         # loss = self.compute_loss(out_dict["embs"], batch)
         # aux_loss = self.compute_auxiliary_loss(out_dict, batch)
@@ -54,6 +54,8 @@ class REDSRewardTrainer(Trainer):
         return {
             "train/base_loss": loss,
             "train/total_loss": total_loss,
+            "train/epic_loss": epic_loss,
+            "train/supcon_loss": supcon_loss,            
         }
 
     @torch.no_grad()
@@ -89,7 +91,8 @@ class REDSRewardTrainer(Trainer):
             
             reward, video_embs, text_embs = self._model(frames, texts, video_name)
             # out_dict = self._model(frames)
-            val_base_loss += self.compute_loss(video_embs, text_embs, reward, gt_rewards)
+            loss, epic_loss, supcon_loss = self.compute_loss(video_embs, text_embs, reward, gt_rewards)
+            val_base_loss += loss
             # val_base_loss += self.compute_loss(out_dict["embs"], batch)
             # val_aux_loss += self.compute_auxiliary_loss(out_dict, batch)
             it_ += 1
@@ -98,6 +101,8 @@ class REDSRewardTrainer(Trainer):
         return {
             "valid/base_loss": val_base_loss,
             "valid/total_loss": val_base_loss + val_aux_loss,
+            "valid/epic_loss": epic_loss,
+            "valid/supcon_loss": supcon_loss,
         }
 
     def compute_loss(self, video_embs, text_embs, reward, gt_rewards):
@@ -116,7 +121,7 @@ class REDSRewardTrainer(Trainer):
 
         # Combine losses
         loss = self.lambda_epic * epic_loss + self.lambda_supcon * supcon_loss
-        return loss
+        return loss, epic_loss, supcon_loss
 
     def extract_score(self, video_features, text_features):
         return self._model.predict_reward(video_features, text_features)
