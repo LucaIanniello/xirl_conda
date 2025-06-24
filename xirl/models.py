@@ -656,27 +656,23 @@ class REDSRewardModel(nn.Module):
       reward = self.predict_reward(video_feature, text_feature)
       return reward, video_feature, text_feature
     
+
     @torch.no_grad()
-    def infer(self, images, texts=None, video_names=None, method="last"):
+    def infer(self, images, texts=None, video_names=None):
         """
         Inference method for downstream evaluation.
         Args:
             images: (B, T, C, H, W) tensor
             texts: optional, list of list of strings
             video_names: optional, list of video names
-            method: "last" or "mean" for pooling over frames
         Returns:
-            Numpy array of video embeddings (B, D)
+            REDSInferOutput with embs: (T, D) numpy array for batch size 1
         """
         self.eval()
-        video_embs = self.encode_video(images)  # list of (T, D) or tensor (B, T, D)
-        # If encode_video returns a tensor, convert to list for consistency
-        if isinstance(video_embs, torch.Tensor):
-            video_embs = [v for v in video_embs]
-        if method == "last":
-            embs = torch.stack([v[-1] for v in video_embs])  # (B, D)
-        elif method == "mean":
-            embs = torch.stack([v.mean(dim=0) for v in video_embs])  # (B, D)
+        video_embs = self.encode_video(images)  # (B, T, D) tensor
+        # If batch size is 1, squeeze the batch dimension
+        if video_embs.shape[0] == 1:
+            embs = video_embs[0]  # (T, D)
         else:
-            raise ValueError("Unknown method for infer: choose 'last' or 'mean'")
-        return REDSInferOutput(embs=embs.cpu())
+            embs = video_embs  # (B, T, D)
+        return REDSInferOutput(embs=embs.cpu().detach().numpy())

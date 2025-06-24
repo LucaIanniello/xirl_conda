@@ -64,7 +64,7 @@ def main(_):
     return
   
   if FLAGS.wandb:
-    wandb.init(project="Allocentric", group="Pretrain", name="StandardXIRL", mode="online")
+    wandb.init(project="Egocentric", group="Pretrain", name="Reds", mode="online")
     wandb.config.update(FLAGS)
     wandb.run.log_code(".")
     wandb.config.update(config.to_dict(), allow_val_change=True)
@@ -171,33 +171,51 @@ def main(_):
                 config.optim.train_max_iters,
                 epoch,
                 time_per_iter,
-                train_loss["train/total_loss"].item(),
+                train_loss["train/total_loss"],
             ))
         if FLAGS.wandb:
           wandb.log({
-              "train/total_loss": train_loss["train/total_loss"].item(),
+              "train/total_loss": train_loss["train/total_loss"],
               "step": global_step,
               "epoch": epoch,
           }, step=global_step)
           if "reds" in FLAGS.experiment_name:
             wandb.log({
-                "reds/epic_loss": train_loss["train/epic_loss"].item(),
-                "reds/supcon_loss": train_loss["train/supcon_loss"].item(),
+                "train_reds/epic_loss": train_loss["train/epic_loss"],
+                "train_reds/supcon_loss": train_loss["train/supcon_loss"],
                 "step": global_step,
                 "epoch": epoch,
             }, step=global_step)
+          # if "holdr" in FLAGS.experiment_name:
+          #   wandb.log({
+          #       "train_holdr/contrastive_loss": train_loss["train/contrastive_loss"],
+          #       "train_holdr/holdr_loss": train_loss["train/holdr_loss"],
+          #       "train_holdr/distance_frames_before_subtask_loss": train_loss["train/distance_frames_before_subtask_loss"],
+          #       "train_holdr/distance_subtask_means_loss": train_loss["train/distance_subtask_means_loss"],
+          #       "step": global_step,
+          #       "epoch": epoch,
+          #   }, step=global_step)
           wandb.log({
-            "evaluation loss": valid_loss["valid/total_loss"].item(),
+            "evaluation loss": valid_loss["valid/total_loss"],
             "step": global_step,
             "epoch": epoch,
           }, step=global_step)
           if "reds" in FLAGS.experiment_name:
             wandb.log({
-                "reds/epic_loss": valid_loss["valid/epic_loss"].item(),
-                "reds/supcon_loss": valid_loss["valid/supcon_loss"].item(),
+                "valid_reds/epic_loss": valid_loss["valid/epic_loss"],
+                "valid_reds/supcon_loss": valid_loss["valid/supcon_loss"],
                 "step": global_step,
                 "epoch": epoch,
             }, step=global_step)
+          # if "holdr" in FLAGS.experiment_name:
+          #   wandb.log({
+          #       "valid_holdr/contrastive_loss": valid_loss["valid/contrastive_loss"],
+          #       "valid_holdr/holdr_loss": valid_loss["valid/holdr_loss"],
+          #       "valid_holdr/distance_frames_before_subtask_loss": valid_loss["valid/distance_frames_before_subtask_loss"],
+          #       "valid_holdr/distance_subtask_means_loss": valid_loss["valid/distance_subtask_means_loss"],
+          #       "step": global_step,
+          #       "epoch": epoch,
+          #   }, step=global_step)
         stopwatch.reset()
       epoch += 1
 

@@ -101,7 +101,7 @@ class HOLDRTrainer(Trainer):
         
         
         # --- N-pair contrastive loss ---
-        n_pair_loss = 0.0
+        contrastive = 0.0
         n_pair_count = 0
         all_subtask_ids = sorted(subtask_means.keys())
         num_subtasks = len(all_subtask_ids)
@@ -170,20 +170,20 @@ class HOLDRTrainer(Trainer):
 
                 logits = torch.cat([pos_dot.unsqueeze(0), neg_dots], dim=0) / self.temperature
                 log_prob = logits[0] - torch.logsumexp(logits, dim=0)
-                n_pair_loss += -log_prob
+                contrastive += -log_prob
                 n_pair_count += 1
 
         if n_pair_count > 0:
-            n_pair_loss /= n_pair_count
+            contrastive /= n_pair_count
             
             
         holdr_loss /= B
-        total_loss = self.hodlr_loss_weight * holdr_loss + self.contrastive_weight * n_pair_loss + self.distance_subtask_means_weight * distance_subtask_means_loss + self.distance_frames_before_subtask_weight * distance_frames_before_subtask_loss
-        return holdr_loss
-        # return {
-        #     "holdr_loss": holdr_loss,
-        #     "n_pair_loss": n_pair_loss,
-        #     "distance_subtask_means_loss": distance_subtask_means_loss,
-        #     "distance_frames_before_subtask_loss": distance_frames_before_subtask_loss,
-        #     "total_loss": total_loss
-        # }
+        total_loss = self.hodlr_loss_weight * holdr_loss + self.contrastive_weight * contrastive + self.distance_subtask_means_weight * distance_subtask_means_loss + self.distance_frames_before_subtask_weight * distance_frames_before_subtask_loss
+        # return holdr_loss
+        return {
+            "holdr_loss": holdr_loss,
+            "contrastive": contrastive,
+            "distance_subtask_means_loss": distance_subtask_means_loss,
+            "distance_frames_before_subtask_loss": distance_frames_before_subtask_loss,
+            "total_loss": total_loss
+        }

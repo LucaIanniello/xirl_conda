@@ -68,10 +68,7 @@ def embed(
     for batch in tqdm(iter(class_loader), leave=False):
       out = model.infer(batch["frames"].to(device))
       # out = model.module.infer(batch["frames"].to(device))
-      if "reds" in FLAGS.experiment_path:
-        emb = out.numpy().video_embs
-      else:
-        emb = out.numpy().embs
+      emb = out.numpy().embs
       init_embs.append(emb[0, :])
       goal_embs.append(emb[-1, :])
   goal_emb = np.mean(np.stack(goal_embs, axis=0), axis=0, keepdims=True)
@@ -96,10 +93,7 @@ def embed_subtasks(
       subgoal_frames = subgoal_data[video_id]
       out = model.infer(batch["frames"].to(device))
       # out = model.module.infer(batch["frames"].to(device))
-      if "reds" in FLAGS.experiment_path:
-        emb = out.numpy().video_embs
-      else:
-        emb = out.numpy().embs
+      emb = out.numpy().embs
       init_embs.append(emb[0, :])
       video_subgoal_embs = []
       for idx in subgoal_frames:

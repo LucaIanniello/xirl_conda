@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import json
 from xirl.trainers.base import Trainer
 import os
+import numpy as np
 
 class REDSRewardTrainer(Trainer):
     def __init__(self, model, optimizer, device, config):
@@ -50,12 +51,20 @@ class REDSRewardTrainer(Trainer):
         total_loss.backward()
         torch.nn.utils.clip_grad_norm_(self._model.parameters(), max_norm=1.0)
         self._optimizer.step()
+        
+            # Only convert to scalars for logging/return
+        def _to_scalar(val):
+            if hasattr(val, "item"):
+                return val.item()
+            elif isinstance(val, (np.ndarray,)):
+                return float(np.squeeze(val))
+            return val
     
         return {
-            "train/base_loss": loss,
-            "train/total_loss": total_loss,
-            "train/epic_loss": epic_loss,
-            "train/supcon_loss": supcon_loss,            
+            "train/base_loss": _to_scalar(loss),
+            "train/total_loss": _to_scalar(total_loss),
+            "train/epic_loss": _to_scalar(epic_loss),
+            "train/supcon_loss": _to_scalar(supcon_loss),   
         }
 
     @torch.no_grad()
@@ -97,12 +106,20 @@ class REDSRewardTrainer(Trainer):
             # val_aux_loss += self.compute_auxiliary_loss(out_dict, batch)
             it_ += 1
         val_base_loss /= it_
+        
+        # Only convert to scalars for logging/return
+        def _to_scalar(val):
+            if hasattr(val, "item"):
+                return val.item()
+            elif isinstance(val, (np.ndarray,)):
+                return float(np.squeeze(val))
+            return val
 
         return {
-            "valid/base_loss": val_base_loss,
-            "valid/total_loss": val_base_loss + val_aux_loss,
-            "valid/epic_loss": epic_loss,
-            "valid/supcon_loss": supcon_loss,
+            "valid/base_loss": _to_scalar(val_base_loss),
+            "valid/total_loss": _to_scalar(val_base_loss + val_aux_loss),
+            "valid/epic_loss": _to_scalar(epic_loss),
+            "valid/supcon_loss": _to_scalar(supcon_loss),
         }
 
     def compute_loss(self, video_embs, text_embs, reward, gt_rewards):
