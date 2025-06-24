@@ -118,8 +118,22 @@ def get_factories(
 
   # print("After DataParallel:", next(model.parameters()).device)
   model = model.to(device)
+  if "reds_model" in config.model.model_type:
+      clip_params = []
+      other_params = []
+      for name, param in model.named_parameters():
+          if "clip_model" in name:
+              clip_params.append(param)
+          else:
+              other_params.append(param)
 
-  optimizer = factory.optim_from_config(config, model)
+      optimizer = torch.optim.Adam([
+          {"params": clip_params, "lr": 1e-6},      # very low LR for CLIP
+          {"params": other_params, "lr": 1e-4},     # higher LR for new layers
+      ])
+  else:
+    optimizer = factory.optim_from_config(config, model)
+    
   trainer = factory.trainer_from_config(config, model, optimizer, device)
   eval_manager = factory.evaluator_from_config(config)
   return (

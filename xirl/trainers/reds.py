@@ -185,16 +185,51 @@ class REDSRewardTrainer(Trainer):
             losses.append(loss)
         # Average over batch
         return torch.stack(losses).mean()
+    
+    def supervised_contrastive_loss(self, features, labels, temperature=0.1):
+        """
+        Args:
+            features: (2B, D) tensor (concatenated video and text features)
+            labels: (2B,) tensor (labels for each feature)
+            temperature: float
+        Returns:
+            Scalar loss
+        """
+        device = features.device
+        features = F.normalize(features, dim=1)
+        similarity_matrix = torch.matmul(features, features.T) / temperature  # (2B, 2B)
+        labels = labels.contiguous().view(-1, 1)
+        mask = torch.eq(labels, labels.T).float().to(device)  # (2B, 2B)
+
+        # Remove self-comparisons
+        logits_mask = torch.ones_like(mask) - torch.eye(mask.shape[0], device=device)
+        mask = mask * logits_mask
+
+        # Numerator: exp(sim) for positive pairs
+        exp_logits = torch.exp(similarity_matrix) * logits_mask
+
+        # Log prob for each anchor
+        log_prob = similarity_matrix - torch.log(exp_logits.sum(dim=1, keepdim=True) + 1e-12)
+
+        # Only keep positives
+        mask_pos_pairs = mask.sum(dim=1)
+        mask_pos_pairs = torch.where(mask_pos_pairs < 1e-6, torch.ones_like(mask_pos_pairs), mask_pos_pairs)
+        mean_log_prob_pos = (mask * log_prob).sum(dim=1) / mask_pos_pairs
+
+        loss = -mean_log_prob_pos
+        loss = loss.mean()
+        return loss
 
     def _compute_supcon_loss(self, video_embs, text_embs):
         # video_embs, text_embs: lists of (T, D)
         video_embs_last = torch.stack([v[-1] for v in video_embs])  # (B, D)
         text_embs_last = torch.stack([t[-1] for t in text_embs])    # (B, D)
+        features = torch.cat([video_embs_last, text_embs_last], dim=0)  # (2B, D)
         labels = torch.arange(len(video_embs_last), device=video_embs_last.device)
-        logits = torch.matmul(F.normalize(video_embs_last, dim=-1), F.normalize(text_embs_last, dim=-1).T) / self.temperature
-        loss = F.cross_entropy(logits, labels)
+        labels = torch.cat([labels, labels], dim=0)  # (2B,)
+        loss = self.supervised_contrastive_loss(features, labels, temperature=self.temperature)
         return loss
-
+    
     @staticmethod
     def compute_pearson_distance(rewa: torch.Tensor, rewb: torch.Tensor, dist: torch.Tensor = None) -> torch.Tensor:
         if dist is None:
