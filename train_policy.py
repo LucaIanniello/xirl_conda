@@ -65,6 +65,9 @@ def evaluate(
   stats = collections.defaultdict(list)
   for _ in range(num_episodes):
     observation, done = env.reset(), False
+    if "holdr" in FLAGS.experiment_name:
+      # Reset the buffer and environment state for holdr.
+      env.reset_state()
     episode_reward = 0
     while not done:
       action = policy.act(observation, sample=False)
@@ -213,13 +216,13 @@ def main(_):
           logger.log_scalar(v, info["total"]["timesteps"], k, "training")
           if FLAGS.wandb:
             wandb.log({
-                f"train/{k}": v,
-                "train/step": i,
+                f"train_done/{k}": v,
+                "train_done/step": i,
             }, step=i)
         if FLAGS.wandb:
             wandb.log({
-                "train/episode_reward": episode_reward,
-                "train/step": i,
+                "train_done/episode_reward": episode_reward,
+                "train_done/step": i,
             }, step=i)
         episode_reward = 0
         

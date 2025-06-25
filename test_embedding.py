@@ -100,7 +100,7 @@ def check_subtask_completion(dist, current_reward, subtask, subtask_solved_count
             subtask_solved_counter = 0
     elif subtask == 1:
         # Hardcoded threshold for subtask 1, as in your example
-        if dist < 4.0:
+        if dist < 1.6:
             subtask_solved_counter += 1
             if subtask_solved_counter >= subtask_hold_steps:
                 subtask = min(num_subtasks - 1, subtask + 1)
@@ -131,7 +131,7 @@ def main(_):
   #     dist = -1.0 * dist * distance_scale
   #     rews.append(dist)
       
-  # elif "holdr" in FLAGS.experiment_path:
+  # # elif "holdr" in FLAGS.experiment_path:
   print("Using HOLDR reward function")
   subtask_means = utils.load_pickle(FLAGS.experiment_path, "subtask_means.pkl")
   distance_scale = utils.load_pickle(FLAGS.experiment_path, "distance_scale.pkl")
@@ -140,8 +140,8 @@ def main(_):
   non_decreasing_reward = False
   prev_reward = 0.0
   subtask_cost = 3.0
-  subtask_threshold = 5.5
-  subtask_hold_steps = 3
+  subtask_threshold = 3.85
+  subtask_hold_steps = 2
   distance_normalizer = 5
   subtask_solved_counter = 0
   prev_reward = 0.0
@@ -157,11 +157,11 @@ def main(_):
     step_reward = max(0.0, 1.0 - dist / distance_normalizer)
     bonus_reward = subtask * subtask_cost
     reward = step_reward + bonus_reward
-    reward = (reward/6.0) - 1.0
-    if subtask == 1:
-      print("Subtask 1")
-    elif subtask == 2:
-      print("Subtask 2")
+    # reward = (reward/6.0) - 1.0
+    # if subtask == 1:
+    #   print("Subtask 1")
+    # elif subtask == 2:
+    #   print("Subtask 2")
     print(f"Reward: {reward}, Subtask: {subtask}, Distance: {dist}, Shaping: {shaping}")
     rews.append(reward)      
     prev_reward, subtask, subtask_solved_counter = check_subtask_completion(
@@ -178,7 +178,7 @@ def main(_):
   plt.grid(True)
 
   # Save the plot instead of showing it
-  save_path = os.path.join("/home/lianniello/xirl_thesis/xirl_conda/", "reward_plot_holdr_default.png")
+  save_path = os.path.join("/home/lianniello/xirl_thesis/experiment_results/Egocentric/training_allo", "EGO_Reds_Correct.png")
   plt.savefig(save_path, bbox_inches='tight')
   print(f"Saved reward plot to: {save_path}")
   plt.close()

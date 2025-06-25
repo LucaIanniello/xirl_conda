@@ -196,6 +196,13 @@ def wrap_learned_reward(env, config):
   pretrained_path = config.reward_wrapper.pretrained_path
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
   model_config, model = load_model_checkpoint(pretrained_path, device)
+  
+  if config.reward_wrapper.type == "reds":
+    model.load_state_dict(torch.load(
+        os.path.join(pretrained_path, "reds_model.pth"),
+        map_location=device,
+    ))
+    model.to(device).eval()
 
   kwargs = {
       "env": env,
@@ -219,6 +226,12 @@ def wrap_learned_reward(env, config):
     kwargs["distance_scale"] = load_pickle(pretrained_path,
                                            "distance_scale.pkl")
     env = wrappers.HOLDRLearnedVisualReward(**kwargs)
+    
+  elif config.reward_wrapper.type == "reds":
+    kwargs["subtask_means"] = load_pickle(pretrained_path, "subtask_means.pkl")
+    kwargs["distance_scale"] = load_pickle(pretrained_path,
+                                           "distance_scale.pkl")
+    env = wrappers.REDSLearnedVisualReward(**kwargs)
 
   else:
     raise ValueError(
@@ -256,6 +269,11 @@ def make_buffer(
     return replay_buffer.ReplayBuffer(**kwargs)
 
   model_config, model = load_model_checkpoint(pretrained_path, device)
+  if config.reward_wrapper.type == "reds":
+    model.load_state_dict(torch.load(
+        os.path.join(pretrained_path, "reds_model.pth"),
+        map_location=device,))
+    model.to(device).eval()
   kwargs["model"] = model
   kwargs["res_hw"] = model_config.data_augmentation.image_size
 
@@ -273,6 +291,12 @@ def make_buffer(
     kwargs["distance_scale"] = load_pickle(pretrained_path,
                                            "distance_scale.pkl")
     buffer = replay_buffer.ReplayBufferHOLDR(**kwargs)
+    
+  elif config.reward_wrapper.type == "reds":
+    kwargs["subtask_means"] = load_pickle(pretrained_path, "subtask_means.pkl")
+    kwargs["distance_scale"] = load_pickle(pretrained_path,
+                                           "distance_scale.pkl")
+    buffer = replay_buffer.ReplayBufferREDS(**kwargs)
 
   else:
     raise ValueError(

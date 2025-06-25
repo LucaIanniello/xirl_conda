@@ -638,8 +638,6 @@ class REDSRewardModel(nn.Module):
       # video_features: list of (T, D), text_features: list of (T, D) or (T, D)
       rewards = []
       for vid_feat, txt_feat in zip(video_features, text_features):
-          # Optionally, you may want to use per-frame text features or a summary
-          # Here, we assume per-frame
           reward_input = torch.cat([vid_feat, txt_feat], dim=-1)  # (T, 2D)
           reward = self.reward_predictor(reward_input)  # (T, 1)
           rewards.append(reward)
@@ -648,13 +646,14 @@ class REDSRewardModel(nn.Module):
     def forward(self, images, texts, video_names=None):
       video_feature = self.encode_video(images)
       text_feature = self.encode_text(texts)
-      for idx, (v, t) in enumerate(zip(video_feature, text_feature)):
-          if v.shape[0] != t.shape[0]:
-              vid_name = video_names[idx] if video_names is not None else f"index {idx}"
-              print(f"Frame/text mismatch for video: {vid_name} ({v.shape[0]} vs {t.shape[0]})")
-              assert v.shape[0] == t.shape[0], f"Frame/text mismatch: {v.shape[0]} vs {t.shape[0]}"
+      # for idx, (v, t) in enumerate(zip(video_feature, text_feature)):
+      #     if v.shape[0] != t.shape[0]:
+      #         vid_name = video_names[idx] if video_names is not None else f"index {idx}"
+      #         print(f"Frame/text mismatch for video: {vid_name} ({v.shape[0]} vs {t.shape[0]})")
+      #         assert v.shape[0] == t.shape[0], f"Frame/text mismatch: {v.shape[0]} vs {t.shape[0]}"
       reward = self.predict_reward(video_feature, text_feature)
       return reward, video_feature, text_feature
+    
     
 
     @torch.no_grad()

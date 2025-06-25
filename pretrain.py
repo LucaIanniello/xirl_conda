@@ -225,6 +225,12 @@ def main(_):
   finally:
     checkpoint_manager.save(global_step)
     logger.close()
+    if "reds" in FLAGS.experiment_name:     
+      # --- SAVE THE FULL MODEL (including CLIP) ---
+      # Save the model's state_dict (recommended)
+      torch.save(model.state_dict(), osp.join(exp_dir, "reds_model.pth"))
+      # Optionally, save the entire model (not recommended for long-term use)
+      # torch.save(model, osp.join(exp_dir, "pretrained_model_full.pt"))
 
 
 if __name__ == "__main__":

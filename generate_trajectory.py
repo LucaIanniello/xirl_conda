@@ -143,7 +143,7 @@ def record_trajectory(env, actions, save_dir: Path, video_id: str, states_array,
     count = 0
     frames = []
     subgoal_frame_indices = {}
-    recorded_subgoals = {"red": False, "blue": False, "yellow": False}
+    recorded_subgoals = {"blue": False, "yellow": False, "red": False}
 
     # Goal area bounds
     goal_x, goal_y, goal_h, _ = DEFAULT_GOAL_XYHW 
@@ -162,7 +162,7 @@ def record_trajectory(env, actions, save_dir: Path, video_id: str, states_array,
 
             # Check block positions for subgoals
             block_positions = get_block_positions(states_array)
-            for color in ["red", "blue", "yellow"]:
+            for color in ["blue", "yellow", "red"]:
                 if not recorded_subgoals[color]:
                     _, by = block_positions[color]
                     if in_goal(goal_lower_center, by, goal_y_max):
@@ -193,21 +193,23 @@ def generate_video(env, out_path: Path, video_id: str, subgoal_frames_dict: dict
 
     starting_block_positions = get_block_positions(states_array=states)
 
-    for color in ["red", "blue", "yellow"]:
+    for color in ["blue", "yellow", "red"]:
         block_positions = get_block_positions(states_array=states)
         bx, by = block_positions[color]
         starting_x, _ = starting_block_positions[color]
         if starting_x == -0.5:
-            f_bx = np.random.uniform(starting_x - 0.3, starting_x + 0.1)
+            f_bx = np.random.uniform(starting_x - 0.1, starting_x + 0.1)
         elif starting_x == 0.5:
-            f_bx = np.random.uniform(starting_x - 0.1, starting_x + 0.3)
+            f_bx = np.random.uniform(starting_x - 0.1, starting_x + 0.1)
         elif starting_x == 0.0:
-            f_bx = np.random.uniform(starting_x - 0.3, starting_x + 0.3)
+            f_bx = np.random.uniform(starting_x - 0.1, starting_x + 0.1)
         all_actions += move_to(env, (bx, by), color, observations_array=observations, actions_array=actions, states_array=states, reward_array=reward)
         all_actions += push_to_goal(env, f_bx, by, goal_lower_center, goal_y_max, color, observations_array=observations, actions_array=actions, states_array=states, reward_array=reward)
 
     final_block_positions = get_block_positions(states_array=states)
-    if all(in_goal(goal_y_min, final_block_positions[color][1], goal_y_max) for color in ["red", "blue", "yellow"]):
+   
+
+    if all(in_goal(goal_y_min, final_block_positions[color][1], goal_y_max) for color in ["blue", "yellow", "red"]):
         save_dir = out_path.parent
         save_dir.mkdir(parents=True, exist_ok=True)
         frames, subgoal_frames = record_trajectory(env, all_actions, frame_dir, video_id, states_array=states)
@@ -216,9 +218,9 @@ def generate_video(env, out_path: Path, video_id: str, subgoal_frames_dict: dict
 
         # Convert to list with fixed order
         subgoal_frames_dict[video_id] = [
-            subgoal_frames.get("red", -1),
             subgoal_frames.get("blue", -1),
-            subgoal_frames.get("yellow", -1)
+            subgoal_frames.get("yellow", -1),
+            subgoal_frames.get("red", -1)
         ]
         
         with open(str(frame_dir / f"{video_id}_observations.json"), "w") as f:
@@ -229,7 +231,7 @@ def generate_video(env, out_path: Path, video_id: str, subgoal_frames_dict: dict
             json.dump(to_serializable(rewards), f)
         with open(str(frame_dir / f"{video_id}_states.json"), "w") as f:
             json.dump(to_serializable(states), f)
-            
+
         return True
     else:
         return False
@@ -237,7 +239,7 @@ def generate_video(env, out_path: Path, video_id: str, subgoal_frames_dict: dict
 
 
 if __name__ == "__main__":
-    root_dir = Path("/home/lianniello/new_env_dataset")
+    root_dir = Path("/home/lianniello/allocentric_bad_trajectory")
     videos_root = root_dir / "videos"
     frames_root = root_dir / "frames" / "train" / "gripper"
     subgoal_frames_dict = {}
@@ -248,12 +250,12 @@ if __name__ == "__main__":
     rewards = []
     
 
-    colors_set = [en.ShapeColor.YELLOW, en.ShapeColor.BLUE, en.ShapeColor.RED]
+    colors_set = [en.ShapeColor.RED, en.ShapeColor.BLUE, en.ShapeColor.YELLOW]
 
 
     for i in range(1100,1105):
         video_id = f"{i}"
-        random.shuffle(colors_set)
+        # random.shuffle(colors_set)
         # if colors_set[1] == en.ShapeColor.BLUE:
         #     colors_set[1] = colors_set[2]
         #     colors_set[2] = en.ShapeColor.BLUE

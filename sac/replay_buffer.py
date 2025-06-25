@@ -310,17 +310,22 @@ class ReplayBufferHOLDR(ReplayBufferLearnedReward):
         image_tensors = [self._pixel_to_tensor(i) for i in self.pixels_staging]
         image_tensors = torch.cat(image_tensors, dim=1)
         embs = self.model.infer(image_tensors).numpy().embs  # Shape: (batch_size, emb_dim)
+        # pdb.set_trace()
         # embs = self.model.module.infer(image_tensors).numpy().embs  # Shape: (batch_size, emb_dim)
-
+        # subtasks = []
         rewards = []
         for emb in embs:
             # Current subtask goal
+            dists = [np.linalg.norm(emb - mean) for mean in self._subtask_means]
+            self._subtask = np.argmin(dists)
+            # subtasks.append(self._subtask)
             goal_emb = self._subtask_means[self._subtask]
           
+            # Scale the goal embedding
 
             # Distance-based reward
             dist = self._compute_embedding_distance(emb, goal_emb, self._subtask)
-            goal_dist = self._compute_embedding_distance(goal_emb, goal_emb, self._subtask)
+            # goal_dist = self._compute_embedding_distance(goal_emb, goal_emb, self._subtask)
             # shaping = (self._num_subtasks - self._subtask) * self._subtask_cost
             
             # if self._non_decreasing_reward:
@@ -341,9 +346,75 @@ class ReplayBufferHOLDR(ReplayBufferLearnedReward):
             #     print("Subtask 2 completed, reward:", reward)
 
             # Check if the subtask is completed
-            self._check_subtask_completion(dist, reward)
+            # self._check_subtask_completion(dist, reward)
 
             rewards.append(reward)
 
+        # pdb.set_trace()
+        self.reset_state()  # Reset subtask tracking for the next batch
         return np.array(rewards)
 
+class ReplayBufferREDS(ReplayBufferLearnedReward):
+    """Replay buffer that replaces the environment reward with REDS-based rewards."""
+
+    def __init__(
+        self,
+        subtask_phrases=None,
+        **base_kwargs,
+    ):
+        """
+        Args:
+            subtask_phrases: List of subtask phrases (optional, will use default if None).
+            **base_kwargs: Additional arguments for the base ReplayBufferLearnedReward class.
+        """
+        super().__init__(**base_kwargs)
+        # Use default phrases if not provided
+        if subtask_phrases is None:
+            subtask_phrases = [
+                "The robot moves the red block in the goal zone",
+                "The robot moves the blue block in the goal zone",
+                "The robot moves the yellow block in the goal zone"
+            ]
+        self.text_phrases = subtask_phrases
+        self.text_features = []
+        for phrase in self.text_phrases:
+            text_feature = self.model.encode_text(phrase)
+            self.text_features.append(text_feature)
+        self.text_features = torch.stack(self.text_features, dim=0).to(self.device)
+
+    @staticmethod
+    def cos_sim(x1, x2):
+        normed_x1 = x1 / torch.norm(x1, dim=-1, keepdim=True)
+        normed_x2 = x2 / torch.norm(x2, dim=-1, keepdim=True)
+        return torch.matmul(normed_x1, normed_x2.T)
+      
+    def text_score(self, image_features, text_features, logit=1.0):
+        return (self.cos_sim(text_features, image_features) + 1) / 2 * logit
+
+    def _get_reward_from_image(self):
+        """Compute the REDS-based reward for the current batch of pixels."""
+        image_tensors = [self._pixel_to_tensor(i) for i in self.pixels_staging]
+        image_tensors = torch.cat(image_tensors, dim=1)  # (1, B, C, H, W)
+        image_features = self.model.encode_image(image_tensors)  # (B, D) or (1, B, D)
+
+        # Compute cosine similarity with each subtask embedding
+        cont_matrix = self.text_score(image_features, self.text_features)  # (B, N)
+        diag_cont_matrix = torch.diagonal(cont_matrix, dim1=-2, dim2=-1)
+
+        # Add bias to prevent phase switching
+        N = self.text_features.shape[0]
+        eps = 5e-2
+        bias = torch.linspace(eps * (N - 1), 0.0, N)
+        diag_cont_matrix += bias  # (B, N)
+
+        # For each sample, select the subtask with max similarity
+        target_text_indices = torch.argmax(diag_cont_matrix, dim=-1)
+
+        # Gather the corresponding subtask embedding for each sample
+        task_embeddings = self.text_features[target_text_indices]  # (B, D)
+
+        # Compute reward for each sample
+        rewards = self.model.predict_reward(image_features, task_embeddings)  # (B,)
+
+        # Detach and convert to numpy for storage in buffer
+        return rewards.detach().cpu().numpy()

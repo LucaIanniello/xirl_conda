@@ -27,6 +27,7 @@ import imageio
 import numpy as np
 import torch
 from xirl.models import SelfSupervisedModel
+from xirl.trainers.reds import REDSRewardTrainer
 
 TimeStep = typing.Tuple[np.ndarray, float, bool, dict]
 ModelType = SelfSupervisedModel
@@ -396,15 +397,17 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         emb = self._model.infer(image_tensor).numpy().embs  # Shape: (emb_dim,)
         # emb = self._model.module.infer(image_tensor).numpy().embs
         
-        # Current subtask goal
+        dists = [np.linalg.norm(emb - mean) for mean in self._subtask_means]
+        self._subtask = np.argmin(dists)
+        # subtasks.append(self._subtask)
         goal_emb = self._subtask_means[self._subtask]
-
+      
         # Distance-based reward
         dist = self._compute_embedding_distance(emb, goal_emb, self._subtask)
         # print(f"Subtask {self._subtask}, Distance: {dist}")
 
         # shaping = (self._num_subtasks - self._subtask) * self._subtask_cost
-        goal_dist = self._compute_embedding_distance(goal_emb, goal_emb, self._subtask)
+        # goal_dist = self._compute_embedding_distance(goal_emb, goal_emb, self._subtask)
         
         # print(f"Subtask {self._subtask}, Distance: {dist}, Goal Distance: {goal_dist}")
         # if self._non_decreasing_reward:
@@ -426,12 +429,49 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         #         print("Subtask 2 completed, reward:", reward)
             
         # Check if the subtask is completed
-        self._check_subtask_completion(dist, reward)
+        # self._check_subtask_completion(dist, reward)
             
         return reward
         
+class REDSLearnedVisualReward(LearnedVisualReward):
+    """Replace the environment reward with the output of a REDS model."""
 
+    def __init__(
+        self,
+        **base_kwargs,
+    ):
+        """Constructor."""
+        super().__init__(**base_kwargs)
+        self.text_phrases = ["The robot moves the red block in the goal zone",  "The robot moves the blue block in the goal zone" ,  "The robot moves the yellow block in the goal zone"]
+        self.text_features = []
+        for i, phrase in enumerate(self.text_phrases):
+            text_feature = self.model.encode_text(phrase)
+            self.text_features.append(text_feature)
+        self.text_features = torch.stack(self.text_features, dim=0).to(self._device)
+          
+    def cos_sim(x1, x2):
+        normed_x1 = x1 / torch.norm(x1, dim=-1, keepdim=True)
+        normed_x2 = x2 / torch.norm(x2, dim=-1, keepdim=True)
+        return torch.matmul(normed_x1, normed_x2.T)
+    
+    def text_score(self, image_features, text_features, logit=1.0):
+        return (self.cos_sim(text_features, image_features) + 1) / 2 * logit
+      
+    def _get_reward_from_image(self, image):
+        """Forward the pixels through the model and compute the reward."""
+        image_features = self.model.encode_image(image)
+        cont_matrix = self.text_score(image_features, self.text_features)
+        diag_cont_matrix = torch.diagonal(cont_matrix, dim1=-2, dim2=-1)
 
+        N = self.text_features.shape[0]
+        eps = 5e-2
+        bias = torch.linspace(eps * (N - 1), 0.0, N)
+        diag_cont_matrix += bias
+        target_text_indices = torch.argmax(diag_cont_matrix).item()
+        task_embedding = self.text_features[target_text_indices]
+        reward = self.model.predict_reward(image_features, task_embedding.unsqueeze(0))
+        return reward
+        
 
 
   

@@ -82,13 +82,13 @@ def replicate_actions(env, action_file, save_dir: Path):
 
 
 if __name__ == "__main__":
-    root_dir = Path("/home/lianniello/egocentric_dataset")
+    root_dir = Path("/home/lianniello/egocentric_bad_trajectory")
     videos_root = root_dir / "videos"
     train_ego_root = root_dir / "frames" / "train" / "gripper"
-    validation_ego_root = root_dir / "frames" / "valid" / "gripper"
+    # validation_ego_root = root_dir / "frames" / "valid" / "gripper"
     
-    train_allo_root = Path("/home/lianniello/new_env_dataset/frames/train/gripper")
-    validation_allo_root = Path("/home/lianniello/new_env_dataset/frames/valid/gripper")
+    train_allo_root = Path("/home/lianniello/allocentric_bad_trajectory/frames/train/gripper")
+    # validation_allo_root = Path("/home/lianniello/new_env_dataset/frames/valid/gripper")
     
     for repo_dir in train_allo_root.iterdir():
         colors_set = []
@@ -122,37 +122,37 @@ if __name__ == "__main__":
         frames = replicate_actions(env, action_file, frame_dir)
         imageio.mimwrite(str(video_path), frames, fps=30)
         
-    for repo_dir in validation_allo_root.iterdir():
-        colors_set = []
-        repo_name = repo_dir.name  
-        # print(f"Processing {repo_name}...") 
-        state_path = validation_allo_root / repo_name / f"{repo_name}_states.json"
-        action_file = validation_allo_root / repo_name / f"{repo_name}_actions.json"
-        with open(state_path, 'r') as f:
-            states = json.load(f)
+    # for repo_dir in validation_allo_root.iterdir():
+    #     colors_set = []
+    #     repo_name = repo_dir.name  
+    #     # print(f"Processing {repo_name}...") 
+    #     state_path = validation_allo_root / repo_name / f"{repo_name}_states.json"
+    #     action_file = validation_allo_root / repo_name / f"{repo_name}_actions.json"
+    #     with open(state_path, 'r') as f:
+    #         states = json.load(f)
         
-        initial_state = states[0]
-        # print(f"Initial state for {repo_name}: {initial_state}")
-        _, colors_set = get_block_positions_and_colors(initial_state)
-        # print(f"Colors set for {repo_name}: {colors_set}")
+    #     initial_state = states[0]
+    #     # print(f"Initial state for {repo_name}: {initial_state}")
+    #     _, colors_set = get_block_positions_and_colors(initial_state)
+    #     # print(f"Colors set for {repo_name}: {colors_set}")
         
-        env = SweepToTopEnv(
-            robot_cls=NonHolonomicGripperEmbodiment,
-            use_state=True, 
-            colors_set=colors_set,
-        )
+    #     env = SweepToTopEnv(
+    #         robot_cls=NonHolonomicGripperEmbodiment,
+    #         use_state=True, 
+    #         colors_set=colors_set,
+    #     )
 
-        print(f"Generating video {repo_name}...")
+    #     print(f"Generating video {repo_name}...")
 
-        video_dir = videos_root / repo_name
-        frame_dir = validation_ego_root / repo_name
-        video_path = video_dir / f"{repo_name}.mp4"
+    #     video_dir = videos_root / repo_name
+    #     frame_dir = validation_ego_root / repo_name
+    #     video_path = video_dir / f"{repo_name}.mp4"
 
-        # Make sure frame and video dirs exist
-        frame_dir.mkdir(parents=True, exist_ok=True)
-        video_dir.mkdir(parents=True, exist_ok=True)
-        frames = replicate_actions(env, action_file, frame_dir)
-        imageio.mimwrite(str(video_path), frames, fps=30)
+    #     # Make sure frame and video dirs exist
+    #     frame_dir.mkdir(parents=True, exist_ok=True)
+    #     video_dir.mkdir(parents=True, exist_ok=True)
+    #     frames = replicate_actions(env, action_file, frame_dir)
+    #     imageio.mimwrite(str(video_path), frames, fps=30)
         
         
         

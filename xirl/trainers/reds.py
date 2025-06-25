@@ -244,3 +244,26 @@ class REDSRewardTrainer(Trainer):
         corr = cov / (torch.sqrt(vara) * torch.sqrt(varb) + 1e-10)
         corr = torch.clamp(corr, max=1.0)
         return torch.sqrt(0.5 * (1 - corr))
+    
+    
+    # def cos_sim(x1, x2):
+    #     normed_x1 = x1 / torch.norm(x1, dim=-1, keepdim=True)
+    #     normed_x2 = x2 / torch.norm(x2, dim=-1, keepdim=True)
+    #     return torch.matmul(normed_x1, normed_x2.T)
+    
+    # def text_score(self, image_features, text_features, logit=1.0):
+    #     return (self.cos_sim(text_features, image_features) + 1) / 2 * logit
+    
+    # def reds_reward_step(self, model, image, text_list_encoded):
+    #     image_features = model.encode_image(image)
+    #     cont_matrix = self.cos_sim(image_features, text_list_encoded)
+    #     diag_cont_matrix = torch.diagonal(cont_matrix, dim1=-2, dim2=-1)
+        
+    #     N = text_list_encoded.shape[0]
+    #     eps = 5e-2
+    #     bias = torch.linspace(eps * (N - 1), 0.0, N)
+    #     diag_cont_matrix += bias
+    #     target_text_indices = torch.argmax(diag_cont_matrix).item()
+    #     task_embedding = text_list_encoded[target_text_indices]
+    #     reward = model.predict_reward(image_features, task_embedding.unsqueeze(0))
+    #     return reward
