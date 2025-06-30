@@ -52,14 +52,14 @@ def get_config():
   config.reward_wrapper = ml_collections.ConfigDict()
   config.reward_wrapper.pretrained_path = "/tmp/xirl/pretrain_runs/dataset=xmagical_mode=same_algo=xirl_embodiment=gripper_uid=SubtaskXirl-EGO"
   # Can be one of ['distance_to_goal', 'goal_classifier', holdr].
-  config.reward_wrapper.type = "holdr"
+  config.reward_wrapper.type = "reds"
 
   # ================================================= #
   # Training parameters.
   # ================================================= #
   config.num_train_steps = 2_000_000
   config.replay_buffer_capacity = 1_000_000
-  config.num_seed_steps = 10_000
+  config.num_seed_steps = 20_000
   config.num_eval_episodes = 150
   config.eval_frequency = 20_000
   config.checkpoint_frequency = 200_000
@@ -75,10 +75,10 @@ def get_config():
   config.sac.action_dim = action_dim
   config.sac.action_range = action_range
   config.sac.discount = 0.99
-  config.sac.init_temperature = 0.1
-  config.sac.alpha_lr = 1e-5
+  config.sac.init_temperature = 0.3
+  config.sac.alpha_lr = 1e-4
   config.sac.alpha_betas = [0.9, 0.999]
-  config.sac.actor_lr = 1e-5
+  config.sac.actor_lr = 1e-4
   config.sac.actor_betas = [0.9, 0.999]
   config.sac.actor_update_frequency = 1
   config.sac.critic_lr = 1e-5

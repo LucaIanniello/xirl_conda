@@ -344,7 +344,7 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
 
         self._subtask_means = np.atleast_2d(subtask_means)  
         self._distance_scale = distance_scale               
-        self._num_subtasks = len(subtask_means)
+        self._num_subtasks = len(subtask_means) + 1
 
         # Subtask tracking
         self._subtask = 0
@@ -370,7 +370,7 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
     
     def _check_subtask_completion(self, dist, current_reward):
       if self._subtask == 0:
-        if dist < self._subtask_threshold:
+        if dist < 5.5:
             self._subtask_solved_counter += 1
             if self._subtask_solved_counter >= self._subtask_hold_steps:
                 self._subtask = min(self._num_subtasks - 1, self._subtask + 1)
@@ -389,6 +389,16 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
                     self._prev_reward = current_reward
         else:
             self._subtask_solved_counter = 0
+      elif self._subtask == 2:
+        if dist < 13.0:
+            self._subtask_solved_counter += 1
+            if self._subtask_solved_counter >= self._subtask_hold_steps:
+                self._subtask = min(self._num_subtasks - 1, self._subtask + 1)
+                self._subtask_solved_counter = 0
+                if self._non_decreasing_reward:
+                    self._prev_reward = current_reward
+        else:
+            self._subtask_solved_counter = 0
       
             
     def _get_reward_from_image(self, image):
@@ -397,29 +407,32 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         emb = self._model.infer(image_tensor).numpy().embs  # Shape: (emb_dim,)
         # emb = self._model.module.infer(image_tensor).numpy().embs
         
-        dists = [np.linalg.norm(emb - mean) for mean in self._subtask_means]
-        self._subtask = np.argmin(dists)
+        # dists = [np.linalg.norm(emb - mean) for mean in self._subtask_means]
+        # self._subtask = np.argmin(dists)
         # subtasks.append(self._subtask)
-        goal_emb = self._subtask_means[self._subtask]
-      
-        # Distance-based reward
-        dist = self._compute_embedding_distance(emb, goal_emb, self._subtask)
-        # print(f"Subtask {self._subtask}, Distance: {dist}")
+        if self._subtask >= self._num_subtasks - 1:
+          reward = self._subtask_cost * self._subtask
+        else:
+          goal_emb = self._subtask_means[self._subtask]
+        
+          # Distance-based reward
+          dist = self._compute_embedding_distance(emb, goal_emb, self._subtask)
+          # print(f"Subtask {self._subtask}, Distance: {dist}")
 
-        # shaping = (self._num_subtasks - self._subtask) * self._subtask_cost
-        # goal_dist = self._compute_embedding_distance(goal_emb, goal_emb, self._subtask)
-        
-        # print(f"Subtask {self._subtask}, Distance: {dist}, Goal Distance: {goal_dist}")
-        # if self._non_decreasing_reward:
-        # reward = self._prev_reward + (1.0 - dist)
-        # else:
-        # reward = - max(0.0, dist - goal_dist) / self._distance_normalizer
-        # reward = - (dist + shaping) / self._distance_normalizer
-        
-        step_reward = max(0.0, 1.0 - dist / self._distance_normalizer)
-        bonus_reward = self._subtask * self._subtask_cost
-        reward = step_reward + bonus_reward
-        
+          # shaping = (self._num_subtasks - self._subtask) * self._subtask_cost
+          # goal_dist = self._compute_embedding_distance(goal_emb, goal_emb, self._subtask)
+          
+          # print(f"Subtask {self._subtask}, Distance: {dist}, Goal Distance: {goal_dist}")
+          # if self._non_decreasing_reward:
+          # reward = self._prev_reward + (1.0 - dist)
+          # else:
+          # reward = - max(0.0, dist - goal_dist) / self._distance_normalizer
+          # reward = - (dist + shaping) / self._distance_normalizer
+          
+          step_reward = 1.0 * np.exp(- dist / 6)
+          bonus_reward = self._subtask * self._subtask_cost
+          reward = step_reward + bonus_reward
+          
         #Normalization
         # reward = (reward / 6.0) - 1.0
             
@@ -429,7 +442,7 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         #         print("Subtask 2 completed, reward:", reward)
             
         # Check if the subtask is completed
-        # self._check_subtask_completion(dist, reward)
+        self._check_subtask_completion(dist, reward)
             
         return reward
         
@@ -444,33 +457,51 @@ class REDSLearnedVisualReward(LearnedVisualReward):
         super().__init__(**base_kwargs)
         self.text_phrases = ["The robot moves the red block in the goal zone",  "The robot moves the blue block in the goal zone" ,  "The robot moves the yellow block in the goal zone"]
         self.text_features = []
-        for i, phrase in enumerate(self.text_phrases):
-            text_feature = self.model.encode_text(phrase)
-            self.text_features.append(text_feature)
+        for phrase in self.text_phrases:
+          # Pass as a batch of 1 video, 1 phrase
+          text_feature_list = self._model.encode_text([[phrase]])
+          # text_feature_list is a list of 1 tensor of shape (1, D)
+          text_feature = text_feature_list[0][0]  # shape: (D,)
+          self.text_features.append(text_feature)
         self.text_features = torch.stack(self.text_features, dim=0).to(self._device)
-          
-    def cos_sim(x1, x2):
+        
+    def cos_sim(self, x1, x2):
         normed_x1 = x1 / torch.norm(x1, dim=-1, keepdim=True)
         normed_x2 = x2 / torch.norm(x2, dim=-1, keepdim=True)
         return torch.matmul(normed_x1, normed_x2.T)
     
     def text_score(self, image_features, text_features, logit=1.0):
-        return (self.cos_sim(text_features, image_features) + 1) / 2 * logit
+        return (self.cos_sim(image_features, text_features) + 1) / 2 * logit
       
     def _get_reward_from_image(self, image):
+        if isinstance(image, np.ndarray):
+            # Convert to torch tensor and permute to (C, H, W)
+            image = torch.from_numpy(image).float().permute(2, 0, 1)  # (C, H, W)
+            image = image / 255.0  # normalize if needed
+
+        # Add batch and time dimensions: (1, 1, C, H, W)
+        image = image.unsqueeze(0).unsqueeze(0)
+        image = image.to(self._device)
+        # print("Computing reward from image.")
         """Forward the pixels through the model and compute the reward."""
-        image_features = self.model.encode_image(image)
+        image_features = self._model.encode_video(image)
         cont_matrix = self.text_score(image_features, self.text_features)
-        diag_cont_matrix = torch.diagonal(cont_matrix, dim1=-2, dim2=-1)
+        diag_cont_matrix = cont_matrix[0]
 
         N = self.text_features.shape[0]
         eps = 5e-2
-        bias = torch.linspace(eps * (N - 1), 0.0, N)
+        bias = torch.linspace(eps * (N - 1), 0.0, N, device=diag_cont_matrix.device)
         diag_cont_matrix += bias
         target_text_indices = torch.argmax(diag_cont_matrix).item()
         task_embedding = self.text_features[target_text_indices]
-        reward = self.model.predict_reward(image_features, task_embedding.unsqueeze(0))
-        return reward
+        if image_features.dim() == 3:
+            image_features = image_features.squeeze(0)  # (1, D)
+        if image_features.dim() == 1:
+            image_features = image_features.unsqueeze(0)  # (1, D)
+        if task_embedding.dim() == 1:
+            task_embedding = task_embedding.unsqueeze(0)  # (1, D)
+        reward = self._model.predict_reward([image_features], [task_embedding])
+        return reward[0].item() if reward[0].numel() == 1 else reward[0]
         
 
 

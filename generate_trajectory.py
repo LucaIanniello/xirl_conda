@@ -239,7 +239,7 @@ def generate_video(env, out_path: Path, video_id: str, subgoal_frames_dict: dict
 
 
 if __name__ == "__main__":
-    root_dir = Path("/home/lianniello/allocentric_bad_trajectory")
+    root_dir = Path("/home/lianniello/egocentric_bad_trajectory")
     videos_root = root_dir / "videos"
     frames_root = root_dir / "frames" / "train" / "gripper"
     subgoal_frames_dict = {}

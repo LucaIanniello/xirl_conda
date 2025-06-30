@@ -258,7 +258,7 @@ class ReplayBufferHOLDR(ReplayBufferLearnedReward):
 
         self._subtask_means = np.atleast_2d(subtask_means)  # (num_subtasks, emb_dim)
         self._distance_scale = distance_scale               # (num_subtasks,)
-        self._num_subtasks = len(subtask_means)
+        self._num_subtasks = len(subtask_means) + 1
 
         # Subtask tracking
         self._subtask = 0
@@ -285,7 +285,7 @@ class ReplayBufferHOLDR(ReplayBufferLearnedReward):
 
     def _check_subtask_completion(self, dist, current_reward):
       if self._subtask == 0:
-        if dist < self._subtask_threshold:
+        if dist < 5.5:
             self._subtask_solved_counter += 1
             if self._subtask_solved_counter >= self._subtask_hold_steps:
                 self._subtask = min(self._num_subtasks - 1, self._subtask + 1)
@@ -296,6 +296,16 @@ class ReplayBufferHOLDR(ReplayBufferLearnedReward):
             self._subtask_solved_counter = 0
       elif self._subtask == 1:
         if dist < 4.5:
+            self._subtask_solved_counter += 1
+            if self._subtask_solved_counter >= self._subtask_hold_steps:
+                self._subtask = min(self._num_subtasks - 1, self._subtask + 1)
+                self._subtask_solved_counter = 0
+                if self._non_decreasing_reward:
+                    self._prev_reward = current_reward
+        else:
+            self._subtask_solved_counter = 0
+      elif self._subtask == 2:
+        if dist < 13.0:
             self._subtask_solved_counter += 1
             if self._subtask_solved_counter >= self._subtask_hold_steps:
                 self._subtask = min(self._num_subtasks - 1, self._subtask + 1)
@@ -316,25 +326,29 @@ class ReplayBufferHOLDR(ReplayBufferLearnedReward):
         rewards = []
         for emb in embs:
             # Current subtask goal
-            dists = [np.linalg.norm(emb - mean) for mean in self._subtask_means]
-            self._subtask = np.argmin(dists)
+            # dists = [np.linalg.norm(emb - mean) for mean in self._subtask_means]
+            # self._subtask = np.argmin(dists)
             # subtasks.append(self._subtask)
-            goal_emb = self._subtask_means[self._subtask]
-          
-            # Scale the goal embedding
+            if self._subtask >= self._num_subtasks-1:
+                reward = self._subtask_cost * self._subtask
+            else:
+                # If the subtask index exceeds the number of subtasks, use the last one
+                goal_emb = self._subtask_means[self._subtask]
+            
+              # Scale the goal embedding
 
-            # Distance-based reward
+              # Distance-based reward
             dist = self._compute_embedding_distance(emb, goal_emb, self._subtask)
-            # goal_dist = self._compute_embedding_distance(goal_emb, goal_emb, self._subtask)
-            # shaping = (self._num_subtasks - self._subtask) * self._subtask_cost
-            
-            # if self._non_decreasing_reward:
-            #     reward = self._pred_reward + (1.0 - dist)
-            # else:
-            #     reward = - (dist + shaping) / self._distance_normalizer
-            # reward = - max(0.0, dist - goal_dist) / self._distance_normalizer
-            
-            step_reward = max(0.0, 1.0 - dist / self._distance_normalizer)
+              # goal_dist = self._compute_embedding_distance(goal_emb, goal_emb, self._subtask)
+              # shaping = (self._num_subtasks - self._subtask) * self._subtask_cost
+              
+              # if self._non_decreasing_reward:
+              #     reward = self._pred_reward + (1.0 - dist)
+              # else:
+              #     reward = - (dist + shaping) / self._distance_normalizer
+              # reward = - max(0.0, dist - goal_dist) / self._distance_normalizer
+              
+            step_reward = 1.0 * np.exp(- dist / 6)
             bonus_reward = self._subtask * self._subtask_cost
             reward = step_reward + bonus_reward
             # reward = (reward / 6.0) - 1.0
@@ -346,12 +360,11 @@ class ReplayBufferHOLDR(ReplayBufferLearnedReward):
             #     print("Subtask 2 completed, reward:", reward)
 
             # Check if the subtask is completed
-            # self._check_subtask_completion(dist, reward)
+            self._check_subtask_completion(dist, reward)
 
             rewards.append(reward)
 
         # pdb.set_trace()
-        self.reset_state()  # Reset subtask tracking for the next batch
         return np.array(rewards)
 
 class ReplayBufferREDS(ReplayBufferLearnedReward):
@@ -378,24 +391,26 @@ class ReplayBufferREDS(ReplayBufferLearnedReward):
         self.text_phrases = subtask_phrases
         self.text_features = []
         for phrase in self.text_phrases:
-            text_feature = self.model.encode_text(phrase)
-            self.text_features.append(text_feature)
+          # Pass as a batch of 1 video, 1 phrase
+          text_feature_list = self.model.encode_text([[phrase]])
+          # text_feature_list is a list of 1 tensor of shape (1, D)
+          text_feature = text_feature_list[0][0]  # shape: (D,)
+          self.text_features.append(text_feature)
         self.text_features = torch.stack(self.text_features, dim=0).to(self.device)
-
-    @staticmethod
-    def cos_sim(x1, x2):
+        
+    def cos_sim(self, x1, x2):
         normed_x1 = x1 / torch.norm(x1, dim=-1, keepdim=True)
         normed_x2 = x2 / torch.norm(x2, dim=-1, keepdim=True)
         return torch.matmul(normed_x1, normed_x2.T)
       
     def text_score(self, image_features, text_features, logit=1.0):
-        return (self.cos_sim(text_features, image_features) + 1) / 2 * logit
+        return (self.cos_sim(image_features, text_features) + 1) / 2 * logit
 
     def _get_reward_from_image(self):
         """Compute the REDS-based reward for the current batch of pixels."""
         image_tensors = [self._pixel_to_tensor(i) for i in self.pixels_staging]
         image_tensors = torch.cat(image_tensors, dim=1)  # (1, B, C, H, W)
-        image_features = self.model.encode_image(image_tensors)  # (B, D) or (1, B, D)
+        image_features = self.model.encode_video(image_tensors)  # (B, D) or (1, B, D)
 
         # Compute cosine similarity with each subtask embedding
         cont_matrix = self.text_score(image_features, self.text_features)  # (B, N)
@@ -404,7 +419,7 @@ class ReplayBufferREDS(ReplayBufferLearnedReward):
         # Add bias to prevent phase switching
         N = self.text_features.shape[0]
         eps = 5e-2
-        bias = torch.linspace(eps * (N - 1), 0.0, N)
+        bias = torch.linspace(eps * (N - 1), 0.0, N, device=diag_cont_matrix.device)  # (N,)
         diag_cont_matrix += bias  # (B, N)
 
         # For each sample, select the subtask with max similarity
@@ -412,9 +427,18 @@ class ReplayBufferREDS(ReplayBufferLearnedReward):
 
         # Gather the corresponding subtask embedding for each sample
         task_embeddings = self.text_features[target_text_indices]  # (B, D)
-
+        if image_features.dim() == 3:
+            image_features = image_features.squeeze(0)  # (1, D)
+        if image_features.dim() == 1:
+            image_features = image_features.unsqueeze(0)  # (1, D)
+        if task_embeddings.dim() == 1:
+            task_embeddings = task_embeddings.unsqueeze(0)  # (1, D)
         # Compute reward for each sample
-        rewards = self.model.predict_reward(image_features, task_embeddings)  # (B,)
-
-        # Detach and convert to numpy for storage in buffer
-        return rewards.detach().cpu().numpy()
+        reward = self.model.predict_reward(image_features, task_embeddings)
+        # Handle case where reward is a list of tensors
+        if isinstance(reward, list):
+            if len(reward) == 1:
+                reward = reward[0]
+            else:
+                reward = torch.stack(reward)
+        return reward.detach().cpu().numpy()

@@ -193,11 +193,13 @@ def wrap_learned_reward(env, config):
   Returns:
     gym.Env object.
   """
+  print("Wrapping environment with learned reward wrapper...")
   pretrained_path = config.reward_wrapper.pretrained_path
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
   model_config, model = load_model_checkpoint(pretrained_path, device)
   
   if config.reward_wrapper.type == "reds":
+    print("Model loaded")
     model.load_state_dict(torch.load(
         os.path.join(pretrained_path, "reds_model.pth"),
         map_location=device,
@@ -228,9 +230,6 @@ def wrap_learned_reward(env, config):
     env = wrappers.HOLDRLearnedVisualReward(**kwargs)
     
   elif config.reward_wrapper.type == "reds":
-    kwargs["subtask_means"] = load_pickle(pretrained_path, "subtask_means.pkl")
-    kwargs["distance_scale"] = load_pickle(pretrained_path,
-                                           "distance_scale.pkl")
     env = wrappers.REDSLearnedVisualReward(**kwargs)
 
   else:
@@ -293,9 +292,6 @@ def make_buffer(
     buffer = replay_buffer.ReplayBufferHOLDR(**kwargs)
     
   elif config.reward_wrapper.type == "reds":
-    kwargs["subtask_means"] = load_pickle(pretrained_path, "subtask_means.pkl")
-    kwargs["distance_scale"] = load_pickle(pretrained_path,
-                                           "distance_scale.pkl")
     buffer = replay_buffer.ReplayBufferREDS(**kwargs)
 
   else:

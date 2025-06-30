@@ -49,7 +49,7 @@ def get_config():
   #INITIAL DATASET
   #config.data.root = "/tmp/xirl/xirl_dataset/xmagical"
   #SUBTASK DATASET
-  config.data.root = "/home/lianniello/egocentric_dataset/frames/"
+  config.data.root = "/home/lianniello/new_env_dataset/frames/"
   # Absolute path to the dataset root.
   # The mini-batch size. Note this only specifies the number of videos to
   # load frames from in a single batch. The effective batch size is actually
