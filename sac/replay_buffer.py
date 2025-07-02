@@ -338,20 +338,20 @@ class ReplayBufferHOLDR(ReplayBufferLearnedReward):
               # Scale the goal embedding
 
               # Distance-based reward
-            dist = self._compute_embedding_distance(emb, goal_emb, self._subtask)
-              # goal_dist = self._compute_embedding_distance(goal_emb, goal_emb, self._subtask)
-              # shaping = (self._num_subtasks - self._subtask) * self._subtask_cost
-              
-              # if self._non_decreasing_reward:
-              #     reward = self._pred_reward + (1.0 - dist)
-              # else:
-              #     reward = - (dist + shaping) / self._distance_normalizer
-              # reward = - max(0.0, dist - goal_dist) / self._distance_normalizer
-              
-            step_reward = 1.0 * np.exp(- dist / 6)
-            bonus_reward = self._subtask * self._subtask_cost
-            reward = step_reward + bonus_reward
-            # reward = (reward / 6.0) - 1.0
+                dist = self._compute_embedding_distance(emb, goal_emb, self._subtask)
+                  # goal_dist = self._compute_embedding_distance(goal_emb, goal_emb, self._subtask)
+                  # shaping = (self._num_subtasks - self._subtask) * self._subtask_cost
+                  
+                  # if self._non_decreasing_reward:
+                  #     reward = self._pred_reward + (1.0 - dist)
+                  # else:
+                  #     reward = - (dist + shaping) / self._distance_normalizer
+                  # reward = - max(0.0, dist - goal_dist) / self._distance_normalizer
+                  
+                step_reward = 1.0 * np.exp(- dist / 6)
+                bonus_reward = self._subtask * self._subtask_cost
+                reward = step_reward + bonus_reward
+                # reward = (reward / 6.0) - 1.0
                 
             
             # if self._subtask == 1:

@@ -78,7 +78,7 @@ def setup():
     logging.info("Skipping checkpoint restore.")
   return model, downstream_loaders
 
-def compute_embedding_distance(emb, goal_emb, subtask_idx, distance_scale):
+def compute_embedding_distance(emb, goal_emb, subtask_idx):
         dist = np.linalg.norm(emb - goal_emb)
         # dist *= distance_scale[subtask_idx]
         return dist
@@ -89,7 +89,7 @@ def check_subtask_completion(dist, current_reward, subtask, subtask_solved_count
     prev_reward = 0.0
     # Logic mirrors the provided _check_subtask_completion
     if subtask == 0:
-        if dist < 5.0:
+        if dist < 5.5:
             subtask_solved_counter += 1
             if subtask_solved_counter >= subtask_hold_steps:
                 subtask = min(num_subtasks - 1, subtask + 1)
@@ -109,17 +109,6 @@ def check_subtask_completion(dist, current_reward, subtask, subtask_solved_count
                     prev_reward = current_reward
         else:
             subtask_solved_counter = 0
-    elif subtask == 2:
-      if dist < 13.0:
-            subtask_solved_counter += 1
-            if subtask_solved_counter >= subtask_hold_steps:
-                subtask = min(num_subtasks - 1, subtask + 1)
-                subtask_solved_counter = 0
-                if non_decreasing_reward:
-                    prev_reward = current_reward
-                    
-      else:
-          subtask_solved_counter = 0
     # You can add more elifs for further subtasks if needed
     return prev_reward, subtask, subtask_solved_counter
 
@@ -142,7 +131,7 @@ def main(_):
   #     dist = -1.0 * dist * distance_scale
   #     rews.append(dist)
       
-  # elif "holdr" in FLAGS.experiment_path:
+  # # elif "holdr" in FLAGS.experiment_path:
   print("Using HOLDR reward function")
   subtask_means = utils.load_pickle(FLAGS.experiment_path, "subtask_means.pkl")
   distance_scale = utils.load_pickle(FLAGS.experiment_path, "distance_scale.pkl")
@@ -150,28 +139,30 @@ def main(_):
   subtask = 0
   non_decreasing_reward = False
   prev_reward = 0.0
-  subtask_cost = 2.0
-  subtask_threshold = 0.7
+  subtask_cost = 3.0
+  subtask_threshold = 5.5 
   subtask_hold_steps = 2
   distance_normalizer = 5
   subtask_solved_counter = 0
   prev_reward = 0.0
   
   for emb in embs:
-    dist = 0.0
-    if subtask >= len(subtask_means):
-      reward = subtask * subtask_cost
-    else:      
-      current_goal_emb = subtask_means[subtask]
-      dist = compute_embedding_distance(emb, current_goal_emb, subtask, distance_scale) 
-      shaping = (len(subtask_means) - subtask) * subtask_cost
-      # if non_decreasing_reward:
-      #   reward = prev_reward + (1.0-dist)
-      # else:
-      #   reward = - (dist+shaping)/distance_normalizer
-      step_reward = 3.0 * np.exp(-dist / 6)
-      bonus_reward = subtask * subtask_cost
-      reward = step_reward + bonus_reward
+    if subtask >= 3:
+          reward = subtask_cost * subtask
+    else:
+          goal_emb = subtask_means[subtask]
+          dist = compute_embedding_distance(emb, goal_emb, subtask) 
+          # shaping = (len(subtask_means) - subtask) * subtask_cost
+          # if non_decreasing_reward:
+          #   reward = prev_reward + (1.0-dist)
+          # else:
+          #   reward = - (dist+shaping)/distance_normalizer
+
+              
+              
+          step_reward =  1.0 * np.exp(- dist / 6)
+          bonus_reward = subtask * subtask_cost
+          reward = step_reward + bonus_reward
     # reward = (reward/6.0) - 1.0
     # if subtask == 1:
     #   print("Subtask 1")
@@ -182,7 +173,7 @@ def main(_):
     prev_reward, subtask, subtask_solved_counter = check_subtask_completion(
         dist, reward, subtask, subtask_solved_counter,
         subtask_threshold, subtask_hold_steps,
-        non_decreasing_reward, len(subtask_means)+1)
+        non_decreasing_reward, len(subtask_means))
       
   # Save reward plot
   plt.figure()
@@ -192,11 +183,11 @@ def main(_):
   plt.ylabel("Reward")
   plt.grid(True)
 
-  # # Save the plot instead of showing it
-  # save_path = os.path.join("/home/lianniello/xirl_thesis/experiment_results/Allocentric/training", "ALLO_Reds_Correct.png")
-  # plt.savefig(save_path, bbox_inches='tight')
-  # print(f"Saved reward plot to: {save_path}")
-  # plt.close()
+  # Save the plot instead of showing it
+  save_path = os.path.join("/home/lianniello/xirl_thesis/experiment_results/Egocentric/training_ego", "ALLO_Subtask_TEST_Correct.png")
+  plt.savefig(save_path, bbox_inches='tight')
+  print(f"Saved reward plot to: {save_path}")
+  plt.close()
 
 if __name__ == "__main__":
   flags.mark_flag_as_required("experiment_path")
