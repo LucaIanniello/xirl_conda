@@ -33,6 +33,7 @@ CONFIG_PATH = "configs/xmagical/rl/env_reward.py"
 flags.DEFINE_enum("embodiment", None, EMBODIMENTS, "Which embodiment to train.")
 flags.DEFINE_list("seeds", [0, 5], "List specifying the range of seeds to run.")
 flags.DEFINE_string("device", "cuda:0", "The compute device.")
+flags.DEFINE_boolean("wandb", False, "Log on W&B.")
 
 
 def main(_):
@@ -64,6 +65,8 @@ def main(_):
             f"{seed}",
             "--device",
             f"{FLAGS.device}",
+             "--wandb",
+            f"{FLAGS.wandb}"
         ]))
 
   # Wait for each seed to terminate.

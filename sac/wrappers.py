@@ -356,17 +356,21 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         self._prev_reward= 0.0
         
         self._distance_normalizer = 5
-        
+                
     def reset_state(self):
         # print("Resetting HOLDR wrapper.")
         self._subtask = 0
         self._subtask_solved_counter = 0
         self._prev_reward = 0.0
-        
+              
     def _compute_embedding_distance(self, emb, goal_emb, subtask_idx):
         dist = np.linalg.norm(emb - goal_emb)
         # dist *= self._distance_scale[subtask_idx]
+        dist = self._distance_reward(dist)
         return dist
+    
+    def _distance_reward(self, d, alpha=0.01, beta=1.0, gamma=1e-3):
+        return -alpha * d**2 - beta * np.log(d**2 + gamma)
     
     def _check_subtask_completion(self, dist, current_reward):
       if self._subtask == 0:
@@ -403,6 +407,7 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
             
     def _get_reward_from_image(self, image):
        
+        
         image_tensor = self._to_tensor(image)
         emb = self._model.infer(image_tensor).numpy().embs  # Shape: (emb_dim,)
         # emb = self._model.module.infer(image_tensor).numpy().embs
@@ -433,16 +438,16 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
           bonus_reward = self._subtask * self._subtask_cost
           reward = step_reward + bonus_reward
           
-        #Normalization
-        # reward = (reward / 6.0) - 1.0
-            
-        # if self._subtask == 1:
-        #         print("Subtask 1 completed, reward:", reward)
-        # elif self._subtask == 2:
-        #         print("Subtask 2 completed, reward:", reward)
-            
-        # Check if the subtask is completed
-        self._check_subtask_completion(dist, reward)
+          #Normalization
+          # reward = (reward / 6.0) - 1.0
+              
+          # if self._subtask == 1:
+          #         print("Subtask 1 completed, reward:", reward)
+          # elif self._subtask == 2:
+          #         print("Subtask 2 completed, reward:", reward)
+              
+          # Check if the subtask is completed
+          self._check_subtask_completion(dist, reward)
             
         return reward
         

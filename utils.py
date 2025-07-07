@@ -182,7 +182,7 @@ def make_env(
   return env
 
 
-def wrap_learned_reward(env, config):
+def wrap_learned_reward(env, config, device):
   """Wrap the environment with a learned reward wrapper.
 
   Args:
@@ -195,7 +195,7 @@ def wrap_learned_reward(env, config):
   """
   print("Wrapping environment with learned reward wrapper...")
   pretrained_path = config.reward_wrapper.pretrained_path
-  device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+  # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
   model_config, model = load_model_checkpoint(pretrained_path, device)
   
   if config.reward_wrapper.type == "reds":

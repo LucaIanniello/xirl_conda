@@ -15,6 +15,8 @@
 
 """Launch script for training RL policies with pretrained reward models."""
 
+
+# Only import non-CUDA, non-torch, non-agent, non-utils modules at the top
 import collections
 import os.path as osp
 from typing import Dict
@@ -27,23 +29,14 @@ import gym
 from ml_collections import config_dict
 from ml_collections import config_flags
 import numpy as np
-from sac import agent
-import torch
-from torchkit import CheckpointManager
-from torchkit import experiment
-from torchkit import Logger
-from tqdm.auto import tqdm
-import utils
-import wandb
+import os
 
 # pylint: disable=logging-fstring-interpolation
-
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string("experiment_name", None, "Experiment name.")
 flags.DEFINE_string("env_name", None, "The environment name.")
 flags.DEFINE_integer("seed", 0, "RNG seed.")
-flags.DEFINE_string("device", "cuda:0", "The compute device.")
 flags.DEFINE_boolean("resume", False, "Resume experiment from last checkpoint.")
 flags.DEFINE_boolean("wandb", False, "Log on W&B.")
 
@@ -54,12 +47,12 @@ config_flags.DEFINE_config_file(
 )
 
 
-def evaluate(
-    policy,
-    env,
-    num_episodes,
-):
+
+# Will be re-imported inside main()
+def evaluate(policy, env, num_episodes):
   """Evaluate the policy and dump rollout videos to disk."""
+  import numpy as np
+  import collections
   episode_rewards = []
   policy.eval()
   stats = collections.defaultdict(list)
@@ -70,7 +63,7 @@ def evaluate(
       env.reset_state()
     episode_reward = 0
     while not done:
-      action = policy.act(observation, sample=False)
+      action = policy.module.act(observation, sample=False)
       observation, reward, done, info = env.step(action)
       episode_reward += reward
     for k, v in info["episode"].items():
@@ -83,10 +76,42 @@ def evaluate(
   return stats, episode_rewards
 
 
-@experiment.pdb_fallback
+
 def main(_):
-  # Make sure we have a valid config that inherits all the keys defined in the
-  # base config.
+  # DDP-safe: import all CUDA, torch, agent, utils, wandb, dist, etc. here
+  import torch
+  import torch.distributed as dist
+  from torchkit import CheckpointManager
+  from torchkit import experiment
+  from torchkit import Logger
+  from tqdm.auto import tqdm
+  import wandb
+  import utils
+  from sac import agent
+  import os
+  from configs.constants import XMAGICAL_EMBODIMENT_TO_ENV_NAME
+  import sys
+  import time
+  pid = os.getpid()
+  print(f"[DDP INIT] PID={pid} RANK={os.environ.get('RANK')} LOCAL_RANK={os.environ.get('LOCAL_RANK')} WORLD_SIZE={os.environ.get('WORLD_SIZE')} CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')} torch.cuda.device_count()={torch.cuda.device_count()}", flush=True)
+
+  # Make sure we have a valid config that inherits all the keys defined in the base config.
+  if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
+      rank = int(os.environ["RANK"])
+      world_size = int(os.environ["WORLD_SIZE"])
+      local_rank = int(os.environ.get("LOCAL_RANK", 0))
+      dist.init_process_group(backend="nccl", init_method="env://")
+      print(f"[DDP INIT] PID={pid} RANK={rank} LOCAL_RANK={local_rank} initializing device (torch.cuda.device_count()={torch.cuda.device_count()})", flush=True)
+      torch.cuda.set_device(local_rank)
+      device = torch.device(f"cuda:{local_rank}")
+      print(f"[DDP INIT] PID={pid} RANK={rank} Set device to cuda:{local_rank} successfully.", flush=True)
+  else:
+      rank = 0
+      world_size = 1
+      device = torch.device(FLAGS.device if torch.cuda.is_available() else "cpu")
+  print(f"[DDP TRAINING START] PID={pid} RANK={rank} DEVICE={device} Starting training loop.", flush=True)
+
+
   activated_subtask_experiment = False
   validate_config(FLAGS.config, mode="rl")
 
@@ -99,17 +124,17 @@ def main(_):
   utils.setup_experiment(exp_dir, config, FLAGS.resume)
   
   if FLAGS.wandb:
-    wandb.init(project="Subtask", group="FirstSubtask", name="FirstSubtask", mode="online")
+    wandb.init(project="Test", group="MultiSubtask", name="FirstSubtask", mode="online")
     wandb.config.update(FLAGS)
     wandb.run.log_code(".")
     wandb.config.update(config.to_dict(), allow_val_change=True)
 
   # Setup compute device.
-  if torch.cuda.is_available():
-    device = torch.device(FLAGS.device)
-  else:
-    logging.info("No GPU device found. Falling back to CPU.")
-    device = torch.device("cpu")
+  # if torch.cuda.is_available():
+  #   device = torch.device(FLAGS.device)
+  # else:
+  #   logging.info("No GPU device found. Falling back to CPU.")
+  #   device = torch.device("cpu")
   logging.info("Using device: %s", device)
 
   # Set RNG seeds.
@@ -139,8 +164,8 @@ def main(_):
   
   if config.reward_wrapper.pretrained_path:
     print("Using learned reward wrapper.")
-    env = utils.wrap_learned_reward(env, FLAGS.config, device=device)
-    eval_env = utils.wrap_learned_reward(eval_env, FLAGS.config, device=device)
+    env = utils.wrap_learned_reward(env, FLAGS.config, device)
+    eval_env = utils.wrap_learned_reward(eval_env, FLAGS.config, device)
 
 
   # Dynamically set observation and action space values.
@@ -156,25 +181,68 @@ def main(_):
   utils.dump_config(exp_dir, config)
   config = config_dict.FrozenConfigDict(config)
 
+  # policy = agent.SAC(device, config.sac)
   policy = agent.SAC(device, config.sac)
+  if world_size > 1:
+    policy = torch.nn.parallel.DistributedDataParallel(policy, device_ids=[local_rank])
 
   buffer = utils.make_buffer(env, device, config)
 
-  # Create checkpoint manager.
+  # # Create checkpoint manager.
   checkpoint_dir = osp.join(exp_dir, "checkpoints")
-  checkpoint_manager = CheckpointManager(
-      checkpoint_dir,
-      policy=policy,
-      **policy.optim_dict(),
-  )
+  # checkpoint_manager = CheckpointManager(
+  #     checkpoint_dir,
+  #     policy=policy,
+  #     **policy.optim_dict(),
+  # )
 
-  logger = Logger(osp.join(exp_dir, "tb"), FLAGS.resume)
+  # logger = Logger(osp.join(exp_dir, "tb"), FLAGS.resume)
+  
+  if rank == 0:
+    logger = Logger(osp.join(exp_dir, "tb"), FLAGS.resume)
+    # If using DDP, get the underlying model for optim_dict
+    optim_dict = policy.module.optim_dict() if world_size > 1 else policy.optim_dict()
+    checkpoint_manager = CheckpointManager(
+        checkpoint_dir,
+        policy=policy,
+        **optim_dict,
+    )
+  else:
+    logger = None
+    checkpoint_manager = None
 
   try:
-    start = checkpoint_manager.restore_or_initialize()
+    if rank == 0:
+      start = checkpoint_manager.restore_or_initialize()
+    else:
+      start = 0
+    if world_size > 1:
+      start_tensor = torch.tensor([start], device=device)
+      dist.broadcast(start_tensor, src=0)
+      start = start_tensor.item()
+    # start = checkpoint_manager.restore_or_initialize()
     observation, done = env.reset(), False
     episode_reward = 0
+    LOG_EVERY_N = 1000  # Print rank/device info every N steps
     for i in tqdm(range(start, config.num_train_steps), initial=start):
+      if (i % LOG_EVERY_N == 0):
+        print(f"[DDP STEP] PID={pid} RANK={rank} DEVICE={device} STEP={i}", flush=True)
+        # Print memory usage for diagnostics
+        try:
+          import torch
+          if torch.cuda.is_available():
+            mem_alloc = torch.cuda.memory_allocated(device)
+            mem_reserved = torch.cuda.memory_reserved(device)
+            print(f"[MEMORY] PID={pid} RANK={rank} GPU={device} Allocated={mem_alloc/1e6:.2f}MB Reserved={mem_reserved/1e6:.2f}MB", flush=True)
+        except Exception as e:
+          print(f"[MEMORY] PID={pid} RANK={rank} Could not get GPU memory: {e}", flush=True)
+        try:
+          import psutil
+          process = psutil.Process(pid)
+          rss = process.memory_info().rss / 1e6
+          print(f"[MEMORY] PID={pid} RANK={rank} CPU RSS={rss:.2f}MB", flush=True)
+        except Exception as e:
+          print(f"[MEMORY] PID={pid} RANK={rank} Could not get CPU memory: {e}", flush=True)
       env.index_seed_steps = i
       env._subtask = 1 # Reset subtask to 0 at the beginning of each step.
             
@@ -236,15 +304,15 @@ def main(_):
         action = env.action_space.sample()  
       else:
         policy.eval()
-        action = policy.act(observation, sample=True)
+        action = policy.module.act(observation, sample=True)
       next_observation, reward, done, info = env.step(action)
       episode_reward += reward
       if not done or "TimeLimit.truncated" in info:
         mask = 1.0
       else:
         mask = 0.0
-        
-      if FLAGS.wandb:
+      
+      if rank == 0 and FLAGS.wandb:
         wandb.log({
         "train/reward": reward,
         "train/step": i,
@@ -271,26 +339,28 @@ def main(_):
           buffer.reset_state()
           env.reset_state()
 
-        for k, v in info["episode"].items():
-          logger.log_scalar(v, info["total"]["timesteps"], k, "training")
+        if rank == 0:
+          for k, v in info["episode"].items():
+            logger.log_scalar(v, info["total"]["timesteps"], k, "training")
+            if FLAGS.wandb:
+              wandb.log({
+                  f"train_done/{k}": v,
+                  "train_done/step": i,
+              }, step=i)
           if FLAGS.wandb:
-            wandb.log({
-                f"train_done/{k}": v,
-                "train_done/step": i,
-            }, step=i)
-        if FLAGS.wandb:
-            wandb.log({
-                "train_done/episode_reward": episode_reward,
-                "train_done/step": i,
-            }, step=i)
-        episode_reward = 0
+              wandb.log({
+                  "train_done/episode_reward": episode_reward,
+                  "train_done/step": i,
+              }, step=i)
+          episode_reward = 0
+        if world_size > 1:
+          dist.barrier()
         
-
       if i >= config.num_seed_steps:
         policy.train()
-        train_info = policy.update(buffer, i)
+        train_info = policy.module.update(buffer, i)
 
-        if (i + 1) % config.log_frequency == 0:
+        if (i + 1) % config.log_frequency == 0 and rank == 0:
           for k, v in train_info.items():
             logger.log_scalar(v, info["total"]["timesteps"], k, "training")
             if FLAGS.wandb:
@@ -304,8 +374,11 @@ def main(_):
                 "train/step": i,
             }, step=i)
           logger.flush()
+        if world_size > 1:
+          dist.barrier()
 
-      if (i + 1) % config.eval_frequency == 0:
+      
+      if (i + 1) % config.eval_frequency == 0 and rank == 0:
         eval_stats, episode_rewards = evaluate(policy, eval_env, config.num_eval_episodes)
         for k, v in eval_stats.items():
           logger.log_scalar(
@@ -325,16 +398,30 @@ def main(_):
                 "train/step": i,
             }, step=i)
         logger.flush()
+        
+      if world_size > 1:
+          dist.barrier()
 
-      if (i + 1) % config.checkpoint_frequency == 0:
+      if (i + 1) % config.checkpoint_frequency == 0 and rank == 0:
+        print(f"[DDP CHECKPOINT] PID={pid} RANK={rank} Saving checkpoint at step {i}", flush=True)
         checkpoint_manager.save(i)
 
   except KeyboardInterrupt:
-    print("Caught keyboard interrupt. Saving before quitting.")
+    print(f"[DDP EXIT] PID={pid} RANK={rank} Caught keyboard interrupt. Saving before quitting.", flush=True)
 
   finally:
-    checkpoint_manager.save(i)  # pylint: disable=undefined-loop-variable
-    logger.close()
+    if rank == 0:
+        print(f"[DDP EXIT] PID={pid} RANK={rank} Saving final checkpoint and closing logger.", flush=True)
+        checkpoint_manager.save(i)
+        logger.close()
+    if world_size > 1:
+        print(f"[DDP EXIT] PID={pid} RANK={rank} Destroying process group.", flush=True)
+        dist.destroy_process_group()
+    # checkpoint_manager.save(i)  # pylint: disable=undefined-loop-variable
+    # logger.close()
+  # NOTE: If you ever use a PyTorch DataLoader for offline RL or imitation, wrap it with DistributedSampler for DDP:
+  # from torch.utils.data.distributed import DistributedSampler
+  # train_sampler = DistributedSampler(dataset)  # Pass sampler=train_sampler to DataLoader
 
 
 if __name__ == "__main__":

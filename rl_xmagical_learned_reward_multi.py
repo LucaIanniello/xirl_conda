@@ -26,17 +26,20 @@ from torchkit.experiment import string_from_kwargs
 from torchkit.experiment import unique_id
 import yaml
 
+import os
+
+import sys
+import xirl_conda.train_policy_mulit as train_policy_mulit
+from absl import app as absl_app
 # pylint: disable=logging-fstring-interpolation
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string("pretrained_path", None, "Path to pretraining experiment.")
 flags.DEFINE_list("seeds", [0, 5], "List specifying the range of seeds to run.")
-flags.DEFINE_string("device", "cuda:0", "The compute device.")
-flags.DEFINE_boolean("wandb", False, "Log on W&B.")
 
 
 def main(_):
-  
+
   with open(os.path.join(FLAGS.pretrained_path, "metadata.yaml"), "r") as fp:
     kwargs = yaml.load(fp, Loader=yaml.FullLoader)
 
@@ -53,42 +56,55 @@ def main(_):
 
   # Map the embodiment to the x-MAGICAL env name.
   env_name = XMAGICAL_EMBODIMENT_TO_ENV_NAME[kwargs["embodiment"]]
-
-  # Generate a unique experiment name.
-  experiment_name = string_from_kwargs(
-      env_name=env_name,
-      reward="learned",
-      reward_type=reward_type,
-      mode=kwargs["mode"],
-      algo=kwargs["algo"],
-      uid=unique_id(),
-  )
+  
+  # Only rank 0 generates experiment name/UID
+  experiment_name = experiment_name = string_from_kwargs(
+        env_name=env_name,
+        reward="learned",
+        reward_type=reward_type,
+        mode=kwargs["mode"],
+        algo=kwargs["algo"],
+        uid=unique_id(),
+    )
   logging.info("Experiment name: %s", experiment_name)
+
 
   # Execute each seed in parallel.
   procs = []
-  for seed in range(*list(map(int, FLAGS.seeds))):
-    procs.append(
-        subprocess.Popen([  # pylint: disable=consider-using-with
-            "python",
-            "train_policy.py",
-            "--experiment_name",
-            experiment_name,
-            "--env_name",
-            f"{env_name}",
-            "--config",
-            f"configs/xmagical/rl/env_reward.py:{kwargs['embodiment']}",
-            "--config.reward_wrapper.pretrained_path",
-            f"{FLAGS.pretrained_path}",
-            "--config.reward_wrapper.type",
-            f"{reward_type}",
-            "--seed",
-            f"{seed}",
-            "--device",
-            f"{FLAGS.device}",
-            "--wandb",
-            f"{FLAGS.wandb}",
-        ]))
+  seed = int(FLAGS.seeds[0])
+  sys.argv = [
+      "train_policy.py",
+      "--experiment_name", experiment_name,
+      "--env_name", f"{env_name}",
+      "--config", f"configs/xmagical/rl/env_reward.py:{kwargs['embodiment']}",
+      "--config.reward_wrapper.pretrained_path", f"{FLAGS.pretrained_path}",
+      "--config.reward_wrapper.type", f"{reward_type}",
+      "--seed", f"{seed}",
+      "--wandb", f"{True}",
+  ]
+  absl_app.run(train_policy_mulit.main)
+  # for seed in range(*list(map(int, FLAGS.seeds))):
+  #   procs.append(
+  #       subprocess.Popen([  # pylint: disable=consider-using-with
+  #           "python",
+  #           "train_policy.py",
+  #           "--experiment_name",
+  #           experiment_name,
+  #           "--env_name",
+  #           f"{env_name}",
+  #           "--config",
+  #           f"configs/xmagical/rl/env_reward.py:{kwargs['embodiment']}",
+  #           "--config.reward_wrapper.pretrained_path",
+  #           f"{FLAGS.pretrained_path}",
+  #           "--config.reward_wrapper.type",
+  #           f"{reward_type}",
+  #           "--seed",
+  #           f"{seed}",
+  #           "--device",
+  #           f"{FLAGS.device}",
+  #           "--wandb",
+  #           f"{FLAGS.wandb}",
+  #       ]))
 
   # Wait for each seed to terminate.
   for p in procs:
