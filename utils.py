@@ -320,3 +320,112 @@ def plot_reward(rews):
     ax.grid(visible=True, which="minor", linestyle="-", alpha=0.2)
   plt.minorticks_on()
   plt.show()
+
+
+# ========================================= #
+# Vector Environment utils for DDP.
+# ========================================= #
+
+def make_vector_env(
+    env_name,
+    num_envs,
+    seed_start,
+    save_dir = None,
+    add_episode_monitor = True,
+    action_repeat = 1,
+    frame_stack = 1,
+):
+  """Create synchronized vector environment for DDP training.
+  
+  Args:
+    env_name: The name of the environment.
+    num_envs: Number of parallel environments to create.
+    seed_start: Starting seed (will be incremented for each env).
+    save_dir: Specify a save directory to wrap with `VideoRecorder`.
+    add_episode_monitor: Set to True to wrap with `EpisodeMonitor`.
+    action_repeat: A value > 1 will wrap with `ActionRepeat`.
+    frame_stack: A value > 1 will wrap with `FrameStack`.
+    
+  Returns:
+    gym.vector.SyncVectorEnv object.
+  """
+  from gym.vector import SyncVectorEnv
+  
+  def _make_env(rank):
+    def _init():
+      env_seed = seed_start + rank
+      return make_env(
+          env_name=env_name,
+          seed=env_seed,
+          save_dir=save_dir if rank == 0 else None,  # Only first env saves videos
+          add_episode_monitor=add_episode_monitor,
+          action_repeat=action_repeat,
+          frame_stack=frame_stack,
+      )
+    return _init
+  
+  # Create vector environment
+  env_fns = [_make_env(i) for i in range(num_envs)]
+  venv = SyncVectorEnv(env_fns)
+  
+  return venv
+
+def wrap_vector_learned_reward(venv, config, device):
+  """Wrap vector environment with learned reward.
+  
+  Args:
+    venv: A vector environment.
+    config: RL config dict.
+    device: Torch device.
+    
+  Returns:
+    Wrapped vector environment.
+  """
+  # For vector environments, we need to wrap each individual environment
+  # This is a simplified approach - you might need to create a custom vector wrapper
+  print("Wrapping vector environment with learned reward...")
+  
+  pretrained_path = config.reward_wrapper.pretrained_path
+  model_config, model = load_model_checkpoint(pretrained_path, device)
+  
+  if config.reward_wrapper.type == "reds":
+    model.load_state_dict(torch.load(
+        os.path.join(pretrained_path, "reds_model.pth"),
+        map_location=device,
+    ))
+    model.to(device).eval()
+
+  # For now, we'll apply the wrapper to each individual environment
+  # This is not the most efficient but maintains compatibility
+  for i, env in enumerate(venv.envs):
+    venv.envs[i] = wrap_learned_reward_single(env, config, device, model, model_config)
+  
+  return venv
+
+def wrap_learned_reward_single(env, config, device, model, model_config):
+  """Wrap a single environment with learned reward."""
+  kwargs = {
+      "env": env,
+      "model": model,
+      "device": device,
+      "res_hw": model_config.data_augmentation.image_size,
+  }
+  
+  if config.reward_wrapper.type == "goal_classifier":
+    from sac.wrappers import GoalClassifierLearnedVisualReward
+    return GoalClassifierLearnedVisualReward(**kwargs)
+  elif config.reward_wrapper.type == "distance_to_goal":
+    kwargs["goal_emb"] = load_pickle(config.reward_wrapper.pretrained_path, "goal_emb.pkl")
+    kwargs["distance_scale"] = load_pickle(config.reward_wrapper.pretrained_path, "distance_scale.pkl")
+    from sac.wrappers import DistanceToGoalLearnedVisualReward
+    return DistanceToGoalLearnedVisualReward(**kwargs)
+  elif config.reward_wrapper.type == "holdr":
+    kwargs["subtask_means"] = load_pickle(config.reward_wrapper.pretrained_path, "subtask_means.pkl")
+    kwargs["distance_scale"] = load_pickle(config.reward_wrapper.pretrained_path, "distance_scale.pkl")
+    from sac.wrappers import HOLDRLearnedVisualReward
+    return HOLDRLearnedVisualReward(**kwargs)
+  elif config.reward_wrapper.type == "reds":
+    from sac.wrappers import REDSLearnedVisualReward
+    return REDSLearnedVisualReward(**kwargs)
+  else:
+    return env

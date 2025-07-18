@@ -39,6 +39,7 @@ flags.DEFINE_string("env_name", None, "The environment name.")
 flags.DEFINE_integer("seed", 0, "RNG seed.")
 flags.DEFINE_boolean("resume", False, "Resume experiment from last checkpoint.")
 flags.DEFINE_boolean("wandb", False, "Log on W&B.")
+flags.DEFINE_string("device", "cuda:0", "Compute device.")  # Add device flag
 
 config_flags.DEFINE_config_file(
     "config",
@@ -49,28 +50,81 @@ config_flags.DEFINE_config_file(
 
 
 # Will be re-imported inside main()
-def evaluate(policy, env, num_episodes):
+def evaluate(policy, eval_env, num_episodes):
   """Evaluate the policy and dump rollout videos to disk."""
   import numpy as np
   import collections
   episode_rewards = []
   policy.eval()
   stats = collections.defaultdict(list)
-  for _ in range(num_episodes):
-    observation, done = env.reset(), False
-    if "holdr" in FLAGS.experiment_name:
-      # Reset the buffer and environment state for holdr.
-      env.reset_state()
-    episode_reward = 0
-    while not done:
-      action = policy.module.act(observation, sample=False)
-      observation, reward, done, info = env.step(action)
-      episode_reward += reward
-    for k, v in info["episode"].items():
-      stats[k].append(v)
-    if "eval_score" in info:
-      stats["eval_score"].append(info["eval_score"])
-    episode_rewards.append(episode_reward)
+  
+  # Handle both vector and single environments
+  is_vector_env = hasattr(eval_env, 'num_envs')
+  
+  episodes_completed = 0
+  if is_vector_env:
+    observations = eval_env.reset()[0]
+    # print(f"[EVAL DEBUG] After reset, observations shape: {observations.shape}, type: {type(observations)}", flush=True)
+    # print(f"[EVAL DEBUG] After reset, observations[0] shape: {observations[0].shape}, type: {type(observations[0])}", flush=True)
+    episode_rewards_current = np.zeros(eval_env.num_envs)
+    
+    while episodes_completed < num_episodes:
+      # Debug: Print observation shapes for first few episodes
+      if episodes_completed < 3:
+        for j in range(min(eval_env.num_envs, 2)):  # Only print first 2 envs
+          obs_shape = observations[j].shape if hasattr(observations[j], 'shape') else type(observations[j])
+          print(f"[EVAL DEBUG] Episode {episodes_completed}, Env {j}: observation shape = {obs_shape}")
+      
+      actions = []
+      for j in range(eval_env.num_envs):
+        # Ensure observations[j] has the correct shape
+        obs_j = observations[j]
+        # print(f"[EVAL DEBUG] Before policy.act: obs_j shape = {obs_j.shape}, type = {type(obs_j)}", flush=True)
+        if hasattr(policy, 'module'):  # DDP case
+          action = policy.module.act(obs_j, sample=False)
+        else:  # Non-DDP case
+          action = policy.act(obs_j, sample=False)
+        actions.append(action)
+      
+      next_observations, rewards, dones, infos = eval_env.step(actions)
+      episode_rewards_current += rewards
+      
+      for j in range(eval_env.num_envs):
+        if dones[j]:
+          if episodes_completed < num_episodes:
+            episode_rewards.append(episode_rewards_current[j])
+            episodes_completed += 1
+            
+            if j < len(infos) and "episode" in infos[j]:
+              for k, v in infos[j]["episode"].items():
+                stats[k].append(v)
+              if "eval_score" in infos[j]:
+                stats["eval_score"].append(infos[j]["eval_score"])
+          
+          episode_rewards_current[j] = 0.0
+      
+      # Update observations for next iteration (key fix!)
+      observations = next_observations
+  else:
+    # Single environment evaluation (fallback)
+    for _ in range(num_episodes):
+      observation, done = eval_env.reset(), False
+      if "holdr" in FLAGS.experiment_name:
+        eval_env.reset_state()
+      episode_reward = 0
+      while not done:
+        if hasattr(policy, 'module'):  # DDP case
+          action = policy.module.act(observation, sample=False)
+        else:  # Non-DDP case
+          action = policy.act(observation, sample=False)
+        observation, reward, done, info = eval_env.step(action)
+        episode_reward += reward
+      for k, v in info["episode"].items():
+        stats[k].append(v)
+      if "eval_score" in info:
+        stats["eval_score"].append(info["eval_score"])
+      episode_rewards.append(episode_reward)
+      
   for k, v in stats.items():
     stats[k] = np.mean(v)
   return stats, episode_rewards
@@ -81,6 +135,7 @@ def main(_):
   # DDP-safe: import all CUDA, torch, agent, utils, wandb, dist, etc. here
   import torch
   import torch.distributed as dist
+  import os.path as osp
   from torchkit import CheckpointManager
   from torchkit import experiment
   from torchkit import Logger
@@ -121,13 +176,16 @@ def main(_):
       FLAGS.experiment_name,
       str(FLAGS.seed),
   )
-#   utils.setup_experiment(exp_dir, config, FLAGS.resume)
   
+  print(f"[DDP EXPERIMENT] PID={pid} RANK={rank} Using experiment name: {FLAGS.experiment_name}", flush=True)
+  print(f"[DDP EXPERIMENT] PID={pid} RANK={rank} Experiment directory: {exp_dir}", flush=True)
+  
+  # Only rank 0 creates the experiment directory and handles setup
   if rank == 0:
     utils.setup_experiment(exp_dir, config, FLAGS.resume)
     
     if FLAGS.wandb:
-      wandb.init(project="EnvRewardTests", group="CurriculumTest", name="CurriculumTest", mode="online")
+      wandb.init(project="EnvRewardTests", group="20MillionMultiGPUENV", name="20MillionMultiGPUENV", mode="online")
       wandb.config.update(FLAGS)
       wandb.run.log_code(".")
       wandb.config.update(config.to_dict(), allow_val_change=True)
@@ -135,6 +193,7 @@ def main(_):
   # Synchronize all processes before continuing
   if world_size > 1:
     dist.barrier()
+
   # Setup compute device.
   # if torch.cuda.is_available():
   #   device = torch.device(FLAGS.device)
@@ -153,33 +212,41 @@ def main(_):
 
 
  
-  # Load env.
-  env = utils.make_env(
+  # Load vector environments with different seeds for each process to ensure diversity
+  num_envs_per_process = config.get("num_envs_per_process", 4)  # Number of parallel envs per DDP process
+  env_seed_start = FLAGS.seed + rank * 1000  # Different seed range for each process
+  eval_seed_start = FLAGS.seed + rank * 1000 + 500
+  
+  print(f"[DDP ENV] PID={pid} RANK={rank} Creating {num_envs_per_process} parallel environments per process", flush=True)
+  
+  env = utils.make_vector_env(
       FLAGS.env_name,
-      FLAGS.seed,
+      num_envs=num_envs_per_process,
+      seed_start=env_seed_start,
       action_repeat=config.action_repeat,
       frame_stack=config.frame_stack,
   )
-  eval_env = utils.make_env(
+  eval_env = utils.make_vector_env(
       FLAGS.env_name,
-      FLAGS.seed + 42,
+      num_envs=1,  # Keep eval simple with single env
+      seed_start=eval_seed_start,
       action_repeat=config.action_repeat,
       frame_stack=config.frame_stack,
-      save_dir=osp.join(exp_dir, "video", "eval"),
+      save_dir=osp.join(exp_dir, "video", "eval") if rank == 0 else None,  # Only rank 0 saves videos
   )
   
-#   if config.reward_wrapper.pretrained_path:
-#     print("Using learned reward wrapper.")
-#     env = utils.wrap_learned_reward(env, FLAGS.config, device)
-#     eval_env = utils.wrap_learned_reward(eval_env, FLAGS.config, device)
+  # if config.reward_wrapper.pretrained_path:
+  #   print("Using learned reward wrapper for vector environments.")
+  #   env = utils.wrap_vector_learned_reward(env, FLAGS.config, device)
+  #   eval_env = utils.wrap_vector_learned_reward(eval_env, FLAGS.config, device)
 
 
-  # Dynamically set observation and action space values.
-  config.sac.obs_dim = env.observation_space.shape[0]
-  config.sac.action_dim = env.action_space.shape[0]
+  # Dynamically set observation and action space values from vector env
+  config.sac.obs_dim = env.single_observation_space.shape[0]
+  config.sac.action_dim = env.single_action_space.shape[0]
   config.sac.action_range = [
-      float(env.action_space.low.min()),
-      float(env.action_space.high.max()),
+      float(env.single_action_space.low.min()),
+      float(env.single_action_space.high.max()),
   ]
 
   # Resave the config since the dynamic values have been updated at this point
@@ -192,7 +259,7 @@ def main(_):
   if world_size > 1:
     policy = torch.nn.parallel.DistributedDataParallel(policy, device_ids=[local_rank])
 
-  buffer = utils.make_buffer(env, device, config)
+  buffer = utils.make_buffer(env.envs[0], device, config)  # Use first env for buffer creation
 
   # # Create checkpoint manager.
   checkpoint_dir = osp.join(exp_dir, "checkpoints")
@@ -226,27 +293,17 @@ def main(_):
       start_tensor = torch.tensor([start], device=device)
       dist.broadcast(start_tensor, src=0)
       start = start_tensor.item()
-    # start = checkpoint_manager.restore_or_initialize()
-    observation, done = env.reset(), False
-    episode_reward = 0
+    
+    observations = env.reset()[0]  # Vector env returns (obs, infos)
+    episode_rewards = np.zeros(env.num_envs)
     LOG_EVERY_N = 1000  # Print rank/device info every N steps
     
-    # print("WORLD_SIZE", world_size)
-    # if world_size == 2:
-    #     half_steps = config.num_train_steps // 2
-    #     if rank == 0:
-    #         step_start = start
-    #         step_end = half_steps
-    #     else:
-    #         step_start = half_steps
-    #         step_end = config.num_train_steps
-    # else:
- 
-       
+    # Each process runs a fraction of total steps for proper DDP speedup
     steps_per_process = config.num_train_steps // world_size
     total_steps = start + steps_per_process
-    # print(f"[DDP TRAIN] PID={pid} RANK={rank} DEVICE={device} Training from step {step_start} to {step_end}", flush=True)
-        
+    
+    print(f"[DDP TRAINING] PID={pid} RANK={rank} Running {steps_per_process} steps (total across all processes: {config.num_train_steps})", flush=True)
+    
     for i in tqdm(range(start, total_steps), initial=start):
       if (i % LOG_EVERY_N == 0):
         print(f"[DDP STEP] PID={pid} RANK={rank} DEVICE={device} STEP={i}", flush=True)
@@ -266,8 +323,10 @@ def main(_):
           print(f"[MEMORY] PID={pid} RANK={rank} CPU RSS={rss:.2f}MB", flush=True)
         except Exception as e:
           print(f"[MEMORY] PID={pid} RANK={rank} Could not get CPU memory: {e}", flush=True)
-      env.index_seed_steps = i
-    #   env._subtask = 1 # Reset subtask to 0 at the beginning of each step.
+      
+      for subenv in env.envs:
+        subenv.index_seed_steps = i
+      # env._subtask = 1 # Reset subtask to 0 at the beginning of each step.
             
       # Subtask Exploration while in the beginning of the training.   
       
@@ -288,22 +347,34 @@ def main(_):
       #   else:
       #       env._subtask = 0
       
-      # # ConsecutionBlocks      
-      # if i == 30_000:
+      # # # ConsecutionBlocks      
+      # if i == 30_000 :
       #   activated_subtask_experiment = True
           
       # if activated_subtask_experiment:
-      #   if i >= 300_000 and i < 600_000:
-      #       env._subtask = 1
-      #   elif i >= 600_000 and i < 900_000:
-      #       env._subtask = 2
-      #   elif i >= 900_000 and i < 1_200_000:
-      #       env._subtask = 3
-      #   elif i == 1_200_000:
-      #       activated_subtask_experiment = False
-      #       env._subtask = 0
-      #   else:
-      #       env._subtask = 0
+      #   for subenv in env.envs:
+      #       if i >= 30_000 and i < 830_000:
+      #           subenv.stage_completed[0] = True
+      #           subenv.stage_completed[1] = True 
+      #           subenv.stage_completed[2] = False
+      #       elif i >= 830_000 and i < 1_630_000:
+      #           subenv.stage_completed[0] = True
+      #           subenv.stage_completed[1] = False
+      #           subenv.stage_completed[2] = False
+      #       elif i >= 1_630_000 and i < 2_400_000:
+      #           subenv.stage_completed[0] = False
+      #           subenv.stage_completed[1] = False 
+      #           subenv.stage_completed[2] = False
+      #       elif i == 2_400_000:
+      #           activated_subtask_experiment = False
+      #           subenv.stage_completed[0] = False
+      #           subenv.stage_completed[1] = False 
+      #           subenv.stage_completed[2] = False
+      #       else:
+      #           subenv.stage_completed[0] = False
+      #           subenv.stage_completed[1] = False 
+      #           subenv.stage_completed[2] = False
+      
       
       # Pretrained Subtask Exploration
       # if activated_subtask_experiment:
@@ -319,102 +390,100 @@ def main(_):
       #   else:
       #       env._subtask = 0
       
-      # CURRICULUM
-      if i == 3_000:
-        activated_subtask_experiment = True
-          
-      if activated_subtask_experiment:
-        print("Entered Activated Subtask Experiment Mode")
-        if i >= 3_000 and i < 9_000:
-            print("Setting stage 2")
-            env.stage_completed = [True, True, False]
-            env.actual_goal_stage = 2
-        elif i >= 9_000 and i < 15_000:
-            print("Setting stage 1")
-            env.stage_completed = [True, False, False]
-            env.actual_goal_stage = 1
-        elif i >= 15_000 and i < 21_000:
-            print("Setting stage 0")
-            env.stage_completed = [False, False, False]
-            env.actual_goal_stage = 0
-        elif i >= 21_000:
-            print("Resetting activated subtask experiment")
-            activated_subtask_experiment = False
-            env.stage_completed = [False, False, False]
-            env.actual_goal_stage = 0
-        else:
-            env.stage_completed = [False, False, False]
-            env.actual_goal_stage = 0
       
-        
+      
             
           
+      # Vector environment handling
       if i < config.num_seed_steps:
-        #Pretrain Subtask Exploration
-        # activated_subtask_experiment = True
-        action = env.action_space.sample()  
+        # Random actions for initial exploration
+        actions = [env.single_action_space.sample() for _ in range(env.num_envs)]
       else:
         policy.eval()
-        action = policy.module.act(observation, sample=True)
-      next_observation, reward, done, info = env.step(action)
-      episode_reward += reward
-      if not done or "TimeLimit.truncated" in info:
-        mask = 1.0
-      else:
-        mask = 0.0
+        # Get actions for all environments
+        actions = []
+        for j in range(env.num_envs):
+          if world_size > 1:
+            action = policy.module.act(observations[j], sample=True)  # DDP case
+          else:
+            action = policy.act(observations[j], sample=True)  # Non-DDP case
+          actions.append(action)
       
-      if rank == 0 and FLAGS.wandb:
-        wandb.log({
-        "train/reward": reward,
-        "train/step": i,
-        }, step=i)
+      # Step all environments
+      next_observations, rewards, dones, infos = env.step(actions)
+      episode_rewards += rewards
+      
+      # Process each environment's transition
+      for j in range(env.num_envs):
+        observation = observations[j]
+        action = actions[j]
+        reward = rewards[j]
+        next_observation = next_observations[j]
+        done = dones[j]
+        mask = 0.0 if done else 1.0
+        
+        # Log rewards for rank 0
+        if rank == 0 and FLAGS.wandb and j == 0:  # Only log first env to avoid spam
+          wandb.log({
+            "train/reward": reward,
+            "train/step": i,
+          }, step=i)
 
-      if not config.reward_wrapper.pretrained_path:
-        # print("No reward wrapper specified. Using default reward.")
-        buffer.insert(observation, action, reward, next_observation, mask)
-      else:
-        buffer.insert(
-            observation,
-            action,
-            reward,
-            next_observation,
-            mask,
-            env.render(mode="rgb_array"),
-        )
-      observation = next_observation
+        # Insert into replay buffer
+        if not config.reward_wrapper.pretrained_path:
+          buffer.insert(observation, action, reward, next_observation, mask)
+        else:
+          # For learned rewards, we need pixels from the single environment
+          pixels = env.envs[j].render(mode="rgb_array") if hasattr(env.envs[j], 'render') else None
+          if pixels is not None:
+            buffer.insert(observation, action, reward, next_observation, mask, pixels)
+          else:
+            buffer.insert(observation, action, reward, next_observation, mask)
+        
+        # Handle episode completion
+        if done:
+          if "holdr" in config.reward_wrapper.type:
+            buffer.reset_state()
+            if hasattr(env.envs[j], 'reset_state'):
+              env.envs[j].reset_state()
 
-      if done:
-        observation, done = env.reset(), False
-        if "holdr" in config.reward_wrapper.type:
-          # print("Resetting buffer and environment state.")
-          buffer.reset_state()
-          env.reset_state()
-
-        if rank == 0:
-          for k, v in info["episode"].items():
-            logger.log_scalar(v, info["total"]["timesteps"], k, "training")
+          # Log episode info for rank 0
+          if rank == 0 and j < len(infos) and "episode" in infos[j]:
+            for k, v in infos[j]["episode"].items():
+              logger.log_scalar(v, infos[j]["total"]["timesteps"], k, "training")
+              if FLAGS.wandb:
+                wandb.log({
+                    f"train_done/{k}": v,
+                    "train_done/step": i,
+                }, step=i)
             if FLAGS.wandb:
               wandb.log({
-                  f"train_done/{k}": v,
+                  "train_done/episode_reward": episode_rewards[j],
                   "train_done/step": i,
               }, step=i)
-          if FLAGS.wandb:
-              wandb.log({
-                  "train_done/episode_reward": episode_reward,
-                  "train_done/step": i,
-              }, step=i)
-          episode_reward = 0
-        if world_size > 1:
-          dist.barrier()
+          if world_size > 1:
+            dist.barrier()
+          
+          # Reset episode reward for this environment
+          episode_rewards[j] = 0.0
+      
+      # Update observations for next iteration
+      observations = next_observations
+      
+
         
       if i >= config.num_seed_steps:
-        print(f"[DDP TRAIN] PID={pid} RANK={rank} DEVICE={device} Training policy at step {i}", flush=True)
         policy.train()
-        train_info = policy.module.update(buffer, i)
+        # Handle both DDP and non-DDP cases for policy updates
+        if world_size > 1:
+          train_info = policy.module.update(buffer, i)  # DDP case
+        else:
+          train_info = policy.update(buffer, i)  # Non-DDP case
 
         if (i + 1) % config.log_frequency == 0 and rank == 0:
           for k, v in train_info.items():
-            logger.log_scalar(v, info["total"]["timesteps"], k, "training")
+            # Use step count for logging instead of info
+            logger.log_scalar(v, i, k, "training")
             if FLAGS.wandb:
               wandb.log({
                   f"train/{k}": v,
@@ -422,20 +491,21 @@ def main(_):
               }, step=i)
           if FLAGS.wandb:
             wandb.log({
-              "train/episode_reward": episode_reward,
+              "train/total_episode_rewards": np.sum(episode_rewards),
                 "train/step": i,
             }, step=i)
           logger.flush()
+        # Synchronize after logging to ensure all processes are aligned
         if world_size > 1:
           dist.barrier()
 
       
       if (i + 1) % config.eval_frequency == 0 and rank == 0:
-        eval_stats, episode_rewards = evaluate(policy, eval_env, config.num_eval_episodes)
+        eval_stats, eval_episode_rewards = evaluate(policy, eval_env, config.num_eval_episodes)
         for k, v in eval_stats.items():
           logger.log_scalar(
               v,
-              info["total"]["timesteps"],
+              i,  # Use step count for logging
               f"average_{k}s",
               "evaluation",
           )
@@ -446,7 +516,7 @@ def main(_):
             }, step=i)
           if FLAGS.wandb:
             wandb.log({
-                "eval/episode_reward": episode_rewards,
+                "eval/episode_reward": eval_episode_rewards,
                 "train/step": i,
             }, step=i)
         logger.flush()

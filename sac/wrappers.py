@@ -337,7 +337,7 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         distance_scale,
         subtask_threshold=5.0,
         subtask_cost=3.0,
-        subtask_hold_steps=3,
+        subtask_hold_steps=1,
         **base_kwargs,
     ):
         super().__init__(**base_kwargs)
@@ -356,25 +356,26 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         self._prev_reward= 0.0
         
         self._distance_normalizer = 5
+        
                 
     def reset_state(self):
         # print("Resetting HOLDR wrapper.")
         self._subtask = 0
         self._subtask_solved_counter = 0
         self._prev_reward = 0.0
-              
+       
     def _compute_embedding_distance(self, emb, goal_emb, subtask_idx):
         dist = np.linalg.norm(emb - goal_emb)
         # dist *= self._distance_scale[subtask_idx]
         dist = self._distance_reward(dist)
         return dist
     
-    def _distance_reward(self, d, alpha=0.01, beta=1.0, gamma=1e-3):
-        return -alpha * d**2 - beta * np.log(d**2 + gamma)
+    def _distance_reward(self, d, alpha=0.001, beta=0.01, gamma=1e-3):
+      return -alpha * d**2 - beta * np.sqrt(d**2 + gamma)
     
     def _check_subtask_completion(self, dist, current_reward):
       if self._subtask == 0:
-        if dist < 5.5:
+        if dist > -0.1:
             self._subtask_solved_counter += 1
             if self._subtask_solved_counter >= self._subtask_hold_steps:
                 self._subtask = min(self._num_subtasks - 1, self._subtask + 1)
@@ -384,7 +385,7 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         else:
             self._subtask_solved_counter = 0
       elif self._subtask == 1:
-        if dist < 4.5:
+        if dist > -0.15:
             self._subtask_solved_counter += 1
             if self._subtask_solved_counter >= self._subtask_hold_steps:
                 self._subtask = min(self._num_subtasks - 1, self._subtask + 1)
@@ -394,7 +395,7 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         else:
             self._subtask_solved_counter = 0
       elif self._subtask == 2:
-        if dist < 13.0:
+        if dist > -0.25:
             self._subtask_solved_counter += 1
             if self._subtask_solved_counter >= self._subtask_hold_steps:
                 self._subtask = min(self._num_subtasks - 1, self._subtask + 1)
@@ -434,9 +435,13 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
           # reward = - max(0.0, dist - goal_dist) / self._distance_normalizer
           # reward = - (dist + shaping) / self._distance_normalizer
           
-          step_reward = 1.0 * np.exp(- dist / 6)
+          step_reward = dist
           bonus_reward = self._subtask * self._subtask_cost
           reward = step_reward + bonus_reward
+          
+
+            
+          # print(f"Subtask {self._subtask}, Reward: {reward}, Distance: {dist}, Previous Reward: {self._previous_reward}")
           
           #Normalization
           # reward = (reward / 6.0) - 1.0

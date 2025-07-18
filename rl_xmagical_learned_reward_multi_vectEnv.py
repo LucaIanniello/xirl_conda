@@ -29,7 +29,7 @@ import yaml
 import os
 
 import sys
-import train_policy_multi as train_policy_multi
+import train_policy_multi_vectEnv as train_policy_multi_vectEnv
 from absl import app as absl_app
 # pylint: disable=logging-fstring-interpolation
 
@@ -78,7 +78,7 @@ def main(_):
   # Execute the training with DDP
   seed = int(FLAGS.seeds[0])
   sys.argv = [
-      "train_policy_multi.py",
+      "train_policy_multi_vectEnv.py",
       "--experiment_name", experiment_name,
       "--env_name", f"{env_name}",
       "--config", f"configs/xmagical/rl/env_reward.py:{kwargs['embodiment']}",
@@ -87,7 +87,7 @@ def main(_):
       "--seed", f"{seed}",
       "--wandb", f"{True}",
   ]
-  absl_app.run(train_policy_multi.main)
+  absl_app.run(train_policy_multi_vectEnv.main)
   # for seed in range(*list(map(int, FLAGS.seeds))):
   #   procs.append(
   #       subprocess.Popen([  # pylint: disable=consider-using-with
