@@ -127,7 +127,7 @@ def main(_):
     utils.setup_experiment(exp_dir, config, FLAGS.resume)
     
     if FLAGS.wandb:
-      wandb.init(project="EnvRewardTests", group="CurriculumTest", name="CurriculumTest", mode="online")
+      wandb.init(project="EnvRewardTests", group="20MillionMultiGPUEGO", name="20MillionMultiGPUEGO", mode="online")
       wandb.config.update(FLAGS)
       wandb.run.log_code(".")
       wandb.config.update(config.to_dict(), allow_val_change=True)
@@ -266,7 +266,8 @@ def main(_):
           print(f"[MEMORY] PID={pid} RANK={rank} CPU RSS={rss:.2f}MB", flush=True)
         except Exception as e:
           print(f"[MEMORY] PID={pid} RANK={rank} Could not get CPU memory: {e}", flush=True)
-      env.index_seed_steps = i
+      
+      env.unwrapped.index_seed_steps = i
     #   env._subtask = 1 # Reset subtask to 0 at the beginning of each step.
             
       # Subtask Exploration while in the beginning of the training.   
@@ -320,31 +321,57 @@ def main(_):
       #       env._subtask = 0
       
       # CURRICULUM
-      if i == 3_000:
-        activated_subtask_experiment = True
+      # if i == 30_000:
+      #   activated_subtask_experiment = True
           
-      if activated_subtask_experiment:
-        print("Entered Activated Subtask Experiment Mode")
-        if i >= 3_000 and i < 9_000:
-            print("Setting stage 2")
-            env.stage_completed = [True, True, False]
-            env.actual_goal_stage = 2
-        elif i >= 9_000 and i < 15_000:
-            print("Setting stage 1")
-            env.stage_completed = [True, False, False]
-            env.actual_goal_stage = 1
-        elif i >= 15_000 and i < 21_000:
-            print("Setting stage 0")
-            env.stage_completed = [False, False, False]
-            env.actual_goal_stage = 0
-        elif i >= 21_000:
-            print("Resetting activated subtask experiment")
-            activated_subtask_experiment = False
-            env.stage_completed = [False, False, False]
-            env.actual_goal_stage = 0
-        else:
-            env.stage_completed = [False, False, False]
-            env.actual_goal_stage = 0
+      # if activated_subtask_experiment:
+      #   # print("Entered Activated Subtask Experiment Mode")
+      #   if i >= 30_000 and i < 530_000:
+      #       # print("Setting stage 2")
+      #       env.unwrapped.stage_completed = [True, True, False]
+      #       env.unwrapped.actual_goal_stage = 2
+      #   elif i >= 530_000 and i < 1_030_000:
+      #       # print("Setting stage 1")
+      #       env.unwrapped.stage_completed = [True, False, False]
+      #       env.unwrapped.actual_goal_stage = 1
+      #   elif i >= 1_030_000 and i < 1_530_000:
+      #       # print("Setting stage 0")
+      #       env.unwrapped.stage_completed = [False, False, False]
+      #       env.unwrapped.actual_goal_stage = 0
+      #   elif i >= 1_530_000:
+      #       # print("Resetting activated subtask experiment")
+      #       activated_subtask_experiment = False
+      #       env.unwrapped.stage_completed = [False, False, False]
+      #       env.unwrapped.actual_goal_stage = 0
+      #   else:
+      #       env.unwrapped.stage_completed = [False, False, False]
+      #       env.unwrapped.actual_goal_stage = 0
+      
+      # if i == 30_000 or i == 830_000 or i == 1_630_000:
+      #   activated_subtask_experiment = True
+          
+      # if activated_subtask_experiment:
+      #   # print("Entered Activated Subtask Experiment Mode")
+      #   if i >= 30_000 and i < 530_000:
+      #       # print("Setting stage 2")
+      #       env.unwrapped.stage_completed = [True, True, True]
+      #       env.unwrapped.actual_goal_stage = 3
+      #   elif i >= 830_000 and i < 1_330_000:
+      #       # print("Setting stage 1")
+      #       env.unwrapped.stage_completed = [True, True, False]
+      #       env.unwrapped.actual_goal_stage = 2
+      #   elif i >= 1_630_000 and i < 2_130_000:
+      #       # print("Setting stage 0")
+      #       env.unwrapped.stage_completed = [True, False, False]
+      #       env.unwrapped.actual_goal_stage = 1
+      #   elif i == 530_000 or i == 1_330_000 or i == 2_130_000:
+      #       # print("Resetting activated subtask experiment")
+      #       activated_subtask_experiment = False
+      #       env.unwrapped.stage_completed = [False, False, False]
+      #       env.unwrapped.actual_goal_stage = 0
+      #   else:
+      #       env.unwrapped.stage_completed = [False, False, False]
+      #       env.unwrapped.actual_goal_stage = 0
       
         
             
