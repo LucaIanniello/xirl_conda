@@ -259,7 +259,7 @@ def main(_):
   if world_size > 1:
     policy = torch.nn.parallel.DistributedDataParallel(policy, device_ids=[local_rank])
 
-  buffer = utils.make_buffer(env.envs[0], device, config)  # Use first env for buffer creation
+  buffer = utils.make_vect_buffer(env.envs[0], device, config)  # Use first env for buffer creation
 
   # # Create checkpoint manager.
   checkpoint_dir = osp.join(exp_dir, "checkpoints")
@@ -347,11 +347,10 @@ def main(_):
       #   else:
       #       env._subtask = 0
       
-      # # # ConsecutionBlocks      
-      # if i == 30_000 :
-      #   activated_subtask_experiment = True
+      # # ConsecutionBlocks      
+      #       # if i == 30_000 : #   ac# tivated_subtask_experiment = True
           
-      # if activated_subtask_experiment:
+      # if# if activated_subtask_experiment:
       #   for subenv in env.envs:
       #       if i >= 30_000 and i < 830_000:
       #           subenv.stage_completed[0] = True
@@ -373,26 +372,7 @@ def main(_):
       #       else:
       #           subenv.stage_completed[0] = False
       #           subenv.stage_completed[1] = False 
-      #           subenv.stage_completed[2] = False
-      
-      
-      # Pretrained Subtask Exploration
-      # if activated_subtask_experiment:
-      #   if i > 25_000 and i <= 50_000:
-      #       env._subtask = 1
-      #   elif i > 50_000 and i <= 75_000:
-      #       env._subtask = 2
-      #   elif i > 75_000 and i <= 100_000:
-      #       env._subtask = 3
-      #   elif i > 100_000:
-      #       activated_subtask_experiment = False
-      #       env._subtask = 0
-      #   else:
-      #       env._subtask = 0
-      
-      
-      
-            
+      #           subenv.stage_completed[2] = False   
           
       # Vector environment handling
       if i < config.num_seed_steps:
@@ -470,9 +450,11 @@ def main(_):
       # Update observations for next iteration
       observations = next_observations
       
-
-        
-      if i >= config.num_seed_steps:
+      # For vector environments, adjust training frequency to maintain same sample efficiency
+      # Train every N steps where N = num_envs to match single environment sample efficiency
+      should_train = (i >= config.num_seed_steps) and ((i + 1) % env.num_envs == 0)
+      
+      if should_train:
         policy.train()
         # Handle both DDP and non-DDP cases for policy updates
         if world_size > 1:

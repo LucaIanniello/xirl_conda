@@ -429,3 +429,76 @@ def wrap_learned_reward_single(env, config, device, model, model_config):
     return REDSLearnedVisualReward(**kwargs)
   else:
     return env
+
+
+
+def make_vect_buffer(env, device, config):
+    """Replay buffer factory.
+
+    Args:
+      env: A `gym.Env`.
+      device: A `torch.device` object.
+      config: RL config dict, must inherit from base config defined in
+        `configs/rl_default.py`.
+
+    Returns:
+      ReplayBuffer.
+    """
+
+    # Handle both single and vector environments for action_shape
+    if hasattr(env, 'single_action_space'):
+      # Vector environment
+      action_shape = env.single_action_space.shape
+      obs_shape = env.single_observation_space.shape
+    elif isinstance(env.action_space, (tuple, gym.spaces.Tuple)):
+      # Vector environment with tuple action space
+      action_shape = env.action_space[0].shape
+      obs_shape = env.observation_space.shape
+    else:
+      # Single environment
+      action_shape = env.action_space.shape
+      obs_shape = env.observation_space.shape
+
+    kwargs = {
+        "obs_shape": obs_shape,
+        "action_shape": action_shape,
+        "capacity": config.replay_buffer_capacity,
+        "device": device,
+    }
+
+    pretrained_path = config.reward_wrapper.pretrained_path
+    if not pretrained_path:
+      return replay_buffer.ReplayBuffer(**kwargs)
+
+    model_config, model = load_model_checkpoint(pretrained_path, device)
+    if config.reward_wrapper.type == "reds":
+      model.load_state_dict(torch.load(
+          os.path.join(pretrained_path, "reds_model.pth"),
+          map_location=device,))
+      model.to(device).eval()
+    kwargs["model"] = model
+    kwargs["res_hw"] = model_config.data_augmentation.image_size
+
+    if config.reward_wrapper.type == "goal_classifier":
+      buffer = replay_buffer.ReplayBufferGoalClassifier(**kwargs)
+
+    elif config.reward_wrapper.type == "distance_to_goal":
+      kwargs["goal_emb"] = load_pickle(pretrained_path, "goal_emb.pkl")
+      kwargs["distance_scale"] = load_pickle(pretrained_path,
+                                            "distance_scale.pkl")
+      buffer = replay_buffer.ReplayBufferDistanceToGoal(**kwargs)
+    
+    elif config.reward_wrapper.type == "holdr":
+      kwargs["subtask_means"] = load_pickle(pretrained_path, "subtask_means.pkl")
+      kwargs["distance_scale"] = load_pickle(pretrained_path,
+                                            "distance_scale.pkl")
+      buffer = replay_buffer.ReplayBufferHOLDR(**kwargs)
+      
+    elif config.reward_wrapper.type == "reds":
+      buffer = replay_buffer.ReplayBufferREDS(**kwargs)
+
+    else:
+      raise ValueError(
+          f"{config.reward_wrapper.type} is not a valid reward wrapper.")
+
+    return buffer

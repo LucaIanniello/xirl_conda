@@ -152,7 +152,7 @@ def main(_):
   utils.setup_experiment(exp_dir, config, FLAGS.resume)
   
   if FLAGS.wandb:
-    wandb.init(project="EnvRewardTests", group="6MSingleGPUMultiEnv", name="6MSingleGPUMultiEnv", mode="online")
+    wandb.init(project="EnvRewardTests", group="6MSingleGPUMultiEnvTEST", name="6MSingleGPUMultiEnvTEST", mode="online")
     wandb.config.update(FLAGS)
     wandb.run.log_code(".")
     wandb.config.update(config.to_dict(), allow_val_change=True)
@@ -223,7 +223,7 @@ def main(_):
 
   policy = agent.SAC(device, config.sac)
 
-  buffer = utils.make_buffer(env.envs[0], device, config)
+  buffer = utils.make_vect_buffer(env.envs[0], device, config)
 
   # Create checkpoint manager.
   checkpoint_dir = osp.join(exp_dir, "checkpoints")
@@ -239,6 +239,18 @@ def main(_):
     start = checkpoint_manager.restore_or_initialize()
     observations = env.reset()[0]  # Vector env returns (obs, infos)
     episode_rewards = np.zeros(env.num_envs)
+    
+    # Debug: Print initial shapes and types
+    print(f"[DEBUG] Initial observations shape: {observations.shape}")
+    print(f"[DEBUG] Episode rewards shape: {episode_rewards.shape}")
+    print(f"[DEBUG] Buffer capacity: {buffer.capacity}")
+    print(f"[DEBUG] Number of environments: {env.num_envs}")
+    print(f"[DEBUG] Training frequency adjusted: every {env.num_envs} steps")
+    
+    # Track learning statistics
+    training_step_count = 0
+    total_episodes_completed = 0
+    
     for i in tqdm(range(start, config.num_train_steps), initial=start):
         
       for subenv in env.envs:
@@ -305,14 +317,28 @@ def main(_):
         policy.eval()
         actions = []
         for j in range(env.num_envs):
-          action = policy.act(observations[j], sample=True)  # Non-DDP case
+          # Add noise to policy actions for better exploration in vector envs
+          action = policy.act(observations[j], sample=True)
+          # Add small amount of noise for diversity between environments
+          if np.random.random() < 0.1:  # 10% chance of random action
+            action = env.single_action_space.sample()
           actions.append(action)
       
       # Step all environments
       next_observations, rewards, dones, infos = env.step(actions)
       episode_rewards += rewards
+      
+      # Handle automatic reset for done environments
+      # Note: SyncVectorEnv should auto-reset, but let's be explicit about observation handling
+      reset_indices = np.where(dones)[0]
+      if len(reset_indices) > 0:
+        # The next_observations already contain the reset observations for done envs
+        pass  # SyncVectorEnv handles this automatically
+      
+      # Randomize the order of environment processing to reduce correlation
+      env_indices = np.random.permutation(env.num_envs)
         
-      for j in range(env.num_envs):
+      for j in env_indices:
         observation = observations[j]
         action = actions[j]
         reward = rewards[j]
@@ -320,7 +346,7 @@ def main(_):
         done = dones[j]
         mask = 0.0 if done else 1.0
         
-        # Log rewards for rank 0
+        # Log rewards for this environment
         if FLAGS.wandb and j == 0:  # Only log first env to avoid spam
           wandb.log({
             "train/reward": reward,
@@ -338,14 +364,15 @@ def main(_):
           else:
             buffer.insert(observation, action, reward, next_observation, mask)
         
-
-      if done:
+        # Handle episode completion for this specific environment
+        if done:
+          total_episodes_completed += 1
           if "holdr" in config.reward_wrapper.type:
             buffer.reset_state()
-            if hasattr(env.envs[j], 'reset_state'):
+          if hasattr(env.envs[j], 'reset_state'):
               env.envs[j].reset_state()
 
-          # Log episode info for rank 0
+          # Log episode info
           if j < len(infos) and "episode" in infos[j]:
             for k, v in infos[j]["episode"].items():
               logger.log_scalar(v, infos[j]["total"]["timesteps"], k, "training")
@@ -361,15 +388,24 @@ def main(_):
               }, step=i)          
           # Reset episode reward for this environment
           episode_rewards[j] = 0.0
+          
+          # Debug: Print episode completion
+          if total_episodes_completed % 100 == 0:  # Print every 100 episodes
+            print(f"[DEBUG] Step {i}, Env {j} completed episode #{total_episodes_completed}, training steps: {training_step_count}")
       
       # Update observations for next iteration
       observations = next_observations
-        
-
-      if i >= config.num_seed_steps:
+      
+      # For vector environments, adjust training frequency to maintain same sample efficiency
+      # Train every N steps where N = num_envs to match single environment sample efficiency
+      should_train = (i >= config.num_seed_steps) and ((i + 1) % env.num_envs == 0)
+      
+      if should_train:
         policy.train()
-        # Handle both DDP and non-DDP cases for policy updates
+        # For vector environments, we should train less frequently to match single env sample efficiency
+        # Train only once per step, not once per environment
         train_info = policy.update(buffer, i)  # Non-DDP case
+        training_step_count += 1
 
         if (i + 1) % config.log_frequency == 0:
           for k, v in train_info.items():
@@ -383,9 +419,14 @@ def main(_):
           if FLAGS.wandb:
             wandb.log({
               "train/total_episode_rewards": np.sum(episode_rewards),
+              "train/training_step_count": training_step_count,
+              "train/total_episodes_completed": total_episodes_completed,
                 "train/step": i,
             }, step=i)
           logger.flush()
+          
+          # Print training progress
+          print(f"[TRAINING] Step {i}, Training steps: {training_step_count}, Episodes: {total_episodes_completed}, Avg reward: {np.mean(episode_rewards):.3f}")
 
       if (i + 1) % config.eval_frequency == 0:
         eval_stats, eval_episode_rewards = evaluate(policy, eval_env, config.num_eval_episodes)

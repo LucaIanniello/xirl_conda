@@ -168,10 +168,10 @@ def main(_):
       save_dir=osp.join(exp_dir, "video", "eval"),
   )
   
-#   if config.reward_wrapper.pretrained_path:
-#     print("Using learned reward wrapper.")
-#     env = utils.wrap_learned_reward(env, FLAGS.config, device)
-#     eval_env = utils.wrap_learned_reward(eval_env, FLAGS.config, device)
+  if config.reward_wrapper.pretrained_path:
+    print("Using learned reward wrapper.")
+    env = utils.wrap_learned_reward(env, FLAGS.config, device)
+    eval_env = utils.wrap_learned_reward(eval_env, FLAGS.config, device)
 
 
   # Dynamically set observation and action space values.
