@@ -61,52 +61,69 @@ def embed(
         logging.info("Embedding %s.", class_name)
         for batch in tqdm(iter(class_loader), leave=False):
             print(batch['video_name'])
-            frames = batch["frames"].to(device)
-            for b in range(frames.shape[0]):
-                for t in range(frames.shape[1]):
-                    image = frames[b, t]
-                    if isinstance(image, np.ndarray):
-                        # Convert to torch tensor and permute to (C, H, W)
-                        image = torch.from_numpy(image).float().permute(2, 0, 1)  # (C, H, W)
-                        image = image / 255.0  # normalize if needed
+            frames = batch["frames"].to(device)  # Shape: (B, T, C, H, W)
+            
+            # Process one video (first batch element)
+            video = frames[0]  # Shape: (T, C, H, W) - entire video sequence
+            
+            # Process each frame in the video
+            for t in range(video.shape[0]):  # Iterate through time steps
+                frame = video[t]  # Shape: (C, H, W)
+                
+                # Add batch and time dimensions: (1, 1, C, H, W)
+                frame = frame.unsqueeze(0).unsqueeze(0)
+                
+                # Forward the pixels through the model and compute the reward.
+                image_features = model.encode_video(frame)
+                
+                # Compute raw cosine similarity (like in your other scripts)
+                cosine_sim = cos_sim(image_features, text_features) 
+                if cosine_sim.dim() == 3:
+                    cosine_sim = cosine_sim[0, 0]  # Shape: (3,) from (1, 1, 3)
+                elif cosine_sim.dim() == 2:
+                    cosine_sim = cosine_sim[0]  # Shape: (3,) from (1, 3)
+                cosine_similarities.append(cosine_sim.detach().cpu().numpy())
+                
+                # Compute continuity matrix (transformed cosine similarity)
+                cont_matrix = text_score(image_features, text_features)
+                if cont_matrix.dim() == 3:
+                    diag_cont_matrix = cont_matrix[0, 0]  # Shape: (3,) from (1, 1, 3)
+                elif cont_matrix.dim() == 2:
+                    diag_cont_matrix = cont_matrix[0]  # Shape: (3,) from (1, 3)
+                else:
+                    diag_cont_matrix = cont_matrix
+                continuity_matrices.append(diag_cont_matrix.detach().cpu().numpy())
+                print(f"Frame {t}: Cosine similarities: {cosine_sim}")
+                print(f"Frame {t}: Diagonal of the continuity matrix: {diag_cont_matrix}")
 
-                    # Add batch and time dimensions: (1, 1, C, H, W)
-                    image = image.unsqueeze(0).unsqueeze(0)
-                    image = image.to(device)
-                    # Forward the pixels through the model and compute the reward.
-                    image_features = model.encode_video(image)
+                N = text_features.shape[0]
+                eps = 5e-2
+                bias = torch.linspace(eps * (N - 1), 0.0, N, device=diag_cont_matrix.device)
+                diag_cont_matrix += bias
+                target_text_indices = torch.argmax(diag_cont_matrix).item()
+                task_embedding = text_features[target_text_indices]
+                
+                # Ensure proper dimensions for reward prediction
+                if image_features.dim() == 3:
+                    image_features = image_features.squeeze(0)  # (1, D)
+                if image_features.dim() == 1:
+                    image_features = image_features.unsqueeze(0)  # (1, D)
+                if task_embedding.dim() == 1:
+                    task_embedding = task_embedding.unsqueeze(0)  # (1, D)
                     
-                    # Compute raw cosine similarity (like in your other scripts)
-                    cosine_sim = cos_sim(image_features, text_features)[0]  # Shape: (3,)
-                    cosine_similarities.append(cosine_sim.detach().cpu().numpy())
-                    
-                    # Compute continuity matrix (transformed cosine similarity)
-                    cont_matrix = text_score(image_features, text_features)
-                    diag_cont_matrix = cont_matrix[0]
-                    continuity_matrices.append(diag_cont_matrix.detach().cpu().numpy())
-                    print(f"Cosine similarities: {cosine_sim}")
-                    print(f"Diagonal of the continuity matrix: {diag_cont_matrix}")
-
-                    N = text_features.shape[0]
-                    eps = 5e-2
-                    bias = torch.linspace(eps * (N - 1), 0.0, N, device=diag_cont_matrix.device)
-                    diag_cont_matrix += bias
-                    target_text_indices = torch.argmax(diag_cont_matrix).item()
-                    task_embedding = text_features[target_text_indices]
-                    if image_features.dim() == 3:
-                        image_features = image_features.squeeze(0)  # (1, D)
-                    if image_features.dim() == 1:
-                        image_features = image_features.unsqueeze(0)  # (1, D)
-                    if task_embedding.dim() == 1:
-                        task_embedding = task_embedding.unsqueeze(0)  # (1, D)
-                    reward = model.predict_reward([image_features], [task_embedding])
-                    if isinstance(reward, torch.Tensor):
-                        reward = reward.detach().cpu().item()
-                    elif hasattr(reward, "item"):
-                        reward = reward.item()
-                    rews.append(float(reward))
+                reward = model.predict_reward([image_features], [task_embedding])
+                
+                # Handle exactly like in the REDSLearnedVisualReward wrapper
+                reward_value = reward[0].item() if reward[0].numel() == 1 else reward[0]
+                if isinstance(reward_value, torch.Tensor):
+                    reward_value = reward_value.item()
+                
+                rews.append(float(reward_value))
+            
+            # Process only the first video, then break
             break
         break
+    
     return rews, cosine_similarities, continuity_matrices
 
 
@@ -143,7 +160,7 @@ def main(_):
     model.to(device).eval()
     rews = []
     print(FLAGS.experiment_path)
-    text_phrases = ["The robot moves the red block in the green zone",  "The robot moves the blue block in the green zone" ,  "The robot moves the yellow block in the green zone"]
+    text_phrases = ["The robot moves the red block in the goal zone",  "The robot moves the blue block in the goal zone" ,  "The robot moves the yellow block in the goal zone"]
     text_features = []
     for phrase in text_phrases:
     # Pass as a batch of 1 video, 1 phrase

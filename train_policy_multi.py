@@ -51,8 +51,7 @@ config_flags.DEFINE_config_file(
 # Will be re-imported inside main()
 def evaluate(policy, env, num_episodes):
   """Evaluate the policy and dump rollout videos to disk."""
-  import numpy as np
-  import collections
+
   episode_rewards = []
   policy.eval()
   stats = collections.defaultdict(list)
@@ -127,7 +126,7 @@ def main(_):
     utils.setup_experiment(exp_dir, config, FLAGS.resume)
     
     if FLAGS.wandb:
-      wandb.init(project="EnvRewardTests", group="20MillionMultiGPUEGO", name="20MillionMultiGPUEGO", mode="online")
+      wandb.init(project="LearnedRewardTests", group="StandardReplayBuffer", name="StandardReplayBuffer", mode="online")
       wandb.config.update(FLAGS)
       wandb.run.log_code(".")
       wandb.config.update(config.to_dict(), allow_val_change=True)
@@ -267,7 +266,7 @@ def main(_):
         except Exception as e:
           print(f"[MEMORY] PID={pid} RANK={rank} Could not get CPU memory: {e}", flush=True)
       
-      env.unwrapped.index_seed_steps = i
+      env.index_seed_step = i
     #   env._subtask = 1 # Reset subtask to 0 at the beginning of each step.
             
       # Subtask Exploration while in the beginning of the training.   
@@ -320,7 +319,7 @@ def main(_):
       #   else:
       #       env._subtask = 0
       
-      # CURRICULUM
+      # # CURRICULUM
       # if i == 30_000:
       #   activated_subtask_experiment = True
           
@@ -330,22 +329,27 @@ def main(_):
       #       # print("Setting stage 2")
       #       env.unwrapped.stage_completed = [True, True, False]
       #       env.unwrapped.actual_goal_stage = 2
+      #       env._subtask = 2
       #   elif i >= 530_000 and i < 1_030_000:
       #       # print("Setting stage 1")
       #       env.unwrapped.stage_completed = [True, False, False]
       #       env.unwrapped.actual_goal_stage = 1
+      #       env._subtask = 1
       #   elif i >= 1_030_000 and i < 1_530_000:
       #       # print("Setting stage 0")
       #       env.unwrapped.stage_completed = [False, False, False]
       #       env.unwrapped.actual_goal_stage = 0
+      #       env._subtask = 0
       #   elif i >= 1_530_000:
       #       # print("Resetting activated subtask experiment")
       #       activated_subtask_experiment = False
       #       env.unwrapped.stage_completed = [False, False, False]
       #       env.unwrapped.actual_goal_stage = 0
+      #       env._subtask = 0
       #   else:
       #       env.unwrapped.stage_completed = [False, False, False]
       #       env.unwrapped.actual_goal_stage = 0
+      #       env._subtask=0
       
       # if i == 30_000 or i == 830_000 or i == 1_630_000:
       #   activated_subtask_experiment = True
@@ -396,27 +400,44 @@ def main(_):
         "train/step": i,
         }, step=i)
 
-      if not config.reward_wrapper.pretrained_path:
-        # print("No reward wrapper specified. Using default reward.")
-        buffer.insert(observation, action, reward, next_observation, mask)
-      else:
-        buffer.insert(
-            observation,
-            action,
-            reward,
-            next_observation,
-            mask,
-            env.render(mode="rgb_array"),
-        )
+      # if not config.reward_wrapper.pretrained_path:
+      #   # print("No reward wrapper specified. Using default reward.")
+      #   print("Inserting into buffer without reward wrapper.")
+      #   buffer.insert(observation, action, reward, next_observation, mask)
+      # else:
+      #   print("Inserting into buffer with reward wrapper.")
+      #   buffer.insert(
+      #       observation,
+      #       action,
+      #       reward,
+      #       next_observation,
+      #       mask,
+      #       env.render(mode="rgb_array"),
+      #   )
+      buffer.insert(observation, action, reward, next_observation, mask)
       observation = next_observation
 
       if done:
+        print("Episode End")
         observation, done = env.reset(), False
         if "holdr" in config.reward_wrapper.type:
           # print("Resetting buffer and environment state.")
-          buffer.reset_state()
+          # buffer.reset_state()
           env.reset_state()
-
+        
+        try:
+            blocks = {
+                "red": next(block for block in env.unwrapped.__debris_shapes if block.color_name == env.unwrapped.ShapeColor.RED),
+                "blue": next(block for block in env.unwrapped.__debris_shapes if block.color_name == env.unwrapped.ShapeColor.BLUE),
+                "yellow": next(block for block in env.unwrapped.__debris_shapes if block.color_name == env.unwrapped.ShapeColor.YELLOW),
+            }
+            
+            print(f"AFTER RESET - Step:{i}, BlockPositions: Red:{blocks['red'].shape_body.position}, " 
+                  f"Blue:{blocks['blue'].shape_body.position}, "
+                  f"Yellow:{blocks['yellow'].shape_body.position}, "
+                  f"Subtask: {env._subtask}, RobotPosition:{env.unwrapped._robot.body.position} ")
+        except Exception as e:
+            print(f"Could not get block positions: {e}")  
         if rank == 0:
           for k, v in info["episode"].items():
             logger.log_scalar(v, info["total"]["timesteps"], k, "training")
@@ -435,7 +456,20 @@ def main(_):
           dist.barrier()
         
       if i >= config.num_seed_steps:
-        print(f"[DDP TRAIN] PID={pid} RANK={rank} DEVICE={device} Training policy at step {i}", flush=True)
+        # print(f"[DDP TRAIN] PID={pid} RANK={rank} DEVICE={device} Training policy at step {i}", flush=True)
+        try:
+            blocks = {
+                "red": next(block for block in env.unwrapped.__debris_shapes if block.color_name == env.unwrapped.ShapeColor.RED),
+                "blue": next(block for block in env.unwrapped.__debris_shapes if block.color_name == env.unwrapped.ShapeColor.BLUE),
+                "yellow": next(block for block in env.unwrapped.__debris_shapes if block.color_name == env.unwrapped.ShapeColor.YELLOW),
+            }
+            
+            print(f"TRAINING- Step:{i}, BlockPositions: Red:{blocks['red'].shape_body.position}, " 
+                  f"Blue:{blocks['blue'].shape_body.position}, "
+                  f"Yellow:{blocks['yellow'].shape_body.position}, "
+                  f"Subtask: {env._subtask}, RobotPosition:{env.unwrapped._robot.body.position} ")
+        except Exception as e:
+            print(f"Could not get block positions: {e}")
         policy.train()
         train_info = policy.module.update(buffer, i)
 

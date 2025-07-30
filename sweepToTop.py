@@ -7,6 +7,7 @@ import xmagical.entities as en
 from xmagical.entities import EntityIndex
 from xmagical.base_env import BaseEnv
 import math
+import random
 
 
 DEFAULT_ROBOT_POSE = ((0.0, -0.6), 0.0)
@@ -71,7 +72,7 @@ class SweepToTopEnv(BaseEnv):
             debris_features = 5
             base_dim = c + debris_features * self.num_debris + 2 * self.num_debris  # robot + (pos+color) + (dist to robot & dist to goal)
             
-            goal_dim = self.num_debris  # one-hot index of current goal block
+            goal_dim = self.num_debris + 1  # one-hot index of current goal block + 1 goal_finished
 
             low = np.array([-1.0] * base_dim + [0.0] * goal_dim, dtype=np.float32)
             high = np.array([+1.0] * base_dim + [1.0] * goal_dim, dtype=np.float32)
@@ -110,64 +111,11 @@ class SweepToTopEnv(BaseEnv):
         return is_near_center and is_gripper_closed
 
     #ORIGINAL 
-    # def on_reset(self) -> None:
-    #     robot_pos, robot_angle = DEFAULT_ROBOT_POSE
-    #     robot = self._make_robot(robot_pos, robot_angle)
-
-    #     goal_color = DEFAULT_GOAL_COLOR
-    #     if self.rand_colors:
-    #         goal_color = self.rng.choice(en.SHAPE_COLORS)
-    #     sensor = en.GoalRegion(
-    #         *DEFAULT_GOAL_XYHW,
-    #         goal_color,
-    #         dashed=False,
-    #     )
-    #     self.add_entities([sensor])
-    #     self.__sensor_ref = sensor
-        
-              
-    #     # Not randomized block positions.
-    #     y_coords = [pose[0][1] for pose in DEFAULT_BLOCK_POSES]
-    #     x_coords = [pose[0][0] for pose in DEFAULT_BLOCK_POSES]
-        
-    #     angles = [pose[1] for pose in DEFAULT_BLOCK_POSES]
-       
-    #     self.starting_position = y_coords
-        
-    #     debris_shapes = [DEFAULT_BLOCK_SHAPE] * self.num_debris
-    #     colors_set = [en.ShapeColor.RED, en.ShapeColor.BLUE, en.ShapeColor.YELLOW]
-    #     self.rng.shuffle(colors_set)
-    #     debris_colors = colors_set[: self.num_debris]
-       
-    #     self.__debris_shapes = [
-    #         self._make_shape(
-    #             shape_type=shape,
-    #             color_name=color,
-    #             init_pos=(x, y),
-    #             init_angle=angle,
-    #         )
-    #         for (x, y, angle, shape, color) in zip(
-    #             x_coords,
-    #             y_coords,
-    #             angles,
-    #             debris_shapes,
-    #             debris_colors,
-    #         )
-    #     ]
-    #     self.add_entities(self.__debris_shapes)
-
-    #     # Add robot last for draw order reasons.
-    #     self.add_entities([robot])
-
-    #     # Block lookup index.
-    #     self.__ent_index = en.EntityIndex(self.__debris_shapes)
-        
-    #     self.stage_completed = [False] * self.num_debris
-    #     self.actual_goal_stage = 0
-    #     self.last_color_reward = 0
-        
-    #SUBTASK
     def on_reset(self) -> None:
+        print("Resetting SweepToTopEnv")
+        robot_pos, robot_angle = DEFAULT_ROBOT_POSE
+        robot = self._make_robot(robot_pos, robot_angle)
+
         goal_color = DEFAULT_GOAL_COLOR
         if self.rand_colors:
             goal_color = self.rng.choice(en.SHAPE_COLORS)
@@ -179,6 +127,8 @@ class SweepToTopEnv(BaseEnv):
         self.add_entities([sensor])
         self.__sensor_ref = sensor
         
+              
+        # Not randomized block positions.
         y_coords = [pose[0][1] for pose in DEFAULT_BLOCK_POSES]
         x_coords = [pose[0][0] for pose in DEFAULT_BLOCK_POSES]
         
@@ -190,113 +140,22 @@ class SweepToTopEnv(BaseEnv):
         colors_set = [en.ShapeColor.RED, en.ShapeColor.BLUE, en.ShapeColor.YELLOW]
         self.rng.shuffle(colors_set)
         debris_colors = colors_set[: self.num_debris]
-        
-        first_subtask = True
-        second_subtask = False
-        third_subtask = False
-        
-        # if self.index_seed_steps >= 300_000 and self.index_seed_steps < 600_000:
-        #     first_subtask = True
-        #     second_subtask = False
-        #     third_subtask = False
-        # elif self.index_seed_steps >= 600_000 and self.index_seed_steps < 900_000:
-        #     first_subtask = False
-        #     second_subtask = True
-        #     third_subtask = False
-        # elif self.index_seed_steps >= 900_000 and self.index_seed_steps < 1_200_000:
-        #     first_subtask = False
-        #     second_subtask = False
-        #     third_subtask = True
-        # else:
-        #     first_subtask = False
-        #     second_subtask = False
-        #     third_subtask = False
-                  
-        if first_subtask:
-            self.__debris_shapes = [
-                self._make_shape(
-                    shape_type=shape,
-                    color_name=color,
-                    init_pos=(x, 1.0) if color == en.ShapeColor.RED else (x, y),
-                    init_angle=0.0 if color == en.ShapeColor.RED else angle,
-                )
-                for (x, y, angle, shape, color) in zip(
-                    x_coords,
-                    y_coords,
-                    angles,
-                    debris_shapes,
-                    debris_colors,
-                )
-            ]
-            for (x, color) in zip(x_coords, debris_colors):
-                if color == en.ShapeColor.RED:
-                    x_red = x
-            robot_pos, robot_angle = (x_red, 0.55), 0.0
-            robot = self._make_robot(robot_pos, robot_angle)
-            
-        elif second_subtask:
-            self.__debris_shapes = [
-                self._make_shape(
-                    shape_type=shape,
-                    color_name=color,
-                    init_pos=(x, 1.0) if color == en.ShapeColor.RED or color == en.ShapeColor.BLUE else (x, y),
-                    init_angle=0.0 if color == en.ShapeColor.RED or color == en.ShapeColor.BLUE else angle,
-                )
-                for (x, y, angle, shape, color) in zip(
-                    x_coords,
-                    y_coords,
-                    angles,
-                    debris_shapes,
-                    debris_colors,
-                )
-            ]
-            for (x, color) in zip(x_coords, debris_colors):
-                if color == en.ShapeColor.BLUE:
-                    x_blue = x
-            robot_pos, robot_angle = (x_blue, 0.55), 0.0
-            robot = self._make_robot(robot_pos, robot_angle)
-            
-        elif third_subtask:
-            self.__debris_shapes = [
-                self._make_shape(
-                    shape_type=shape,
-                    color_name=color,
-                    init_pos=(x, 1.0) if color == en.ShapeColor.RED or color == en.ShapeColor.BLUE or color == en.ShapeColor.YELLOW else (x, y),
-                    init_angle=0.0 if color == en.ShapeColor.RED or color == en.ShapeColor.BLUE or color == en.ShapeColor.YELLOW else angle,
-                )
-                for (x, y, angle, shape, color) in zip(
-                    x_coords,
-                    y_coords,
-                    angles,
-                    debris_shapes,
-                    debris_colors,
-                )
-            ]
-            for (x, color) in zip(x_coords, debris_colors):
-                if color == en.ShapeColor.YELLOW:
-                    x_yellow = x
-            robot_pos, robot_angle = (x_yellow, 0.55), 0.0
-            robot = self._make_robot(robot_pos, robot_angle)
-            
-        else:
-            self.__debris_shapes = [
-                self._make_shape(
-                    shape_type=shape,
-                    color_name=color,
-                    init_pos=(x, y),
-                    init_angle=angle
-                )
-                for (x, y, angle, shape, color) in zip(
-                    x_coords,
-                    y_coords,
-                    angles,
-                    debris_shapes,
-                    debris_colors,
-                )
-            ]
-            robot_pos, robot_angle = DEFAULT_ROBOT_POSE
-            robot = self._make_robot(robot_pos, robot_angle)
-            
+       
+        self.__debris_shapes = [
+            self._make_shape(
+                shape_type=shape,
+                color_name=color,
+                init_pos=(x, y),
+                init_angle=angle,
+            )
+            for (x, y, angle, shape, color) in zip(
+                x_coords,
+                y_coords,
+                angles,
+                debris_shapes,
+                debris_colors,
+            )
+        ]
         self.add_entities(self.__debris_shapes)
 
         # Add robot last for draw order reasons.
@@ -308,6 +167,154 @@ class SweepToTopEnv(BaseEnv):
         self.stage_completed = [False] * self.num_debris
         self.actual_goal_stage = 0
         self.last_color_reward = 0
+        
+    #SUBTASK
+    # def on_reset(self) -> None:
+    #     print("Resetting SweepToTopEnv with subtask logic")
+    #     goal_color = DEFAULT_GOAL_COLOR
+    #     if self.rand_colors:
+    #         goal_color = self.rng.choice(en.SHAPE_COLORS)
+    #     sensor = en.GoalRegion(
+    #         *DEFAULT_GOAL_XYHW,
+    #         goal_color,
+    #         dashed=False,
+    #     )
+    #     self.add_entities([sensor])
+    #     self.__sensor_ref = sensor
+        
+    #     y_coords = [pose[0][1] for pose in DEFAULT_BLOCK_POSES]
+    #     x_coords = [pose[0][0] for pose in DEFAULT_BLOCK_POSES]
+        
+    #     angles = [pose[1] for pose in DEFAULT_BLOCK_POSES]
+       
+    #     self.starting_position = y_coords
+        
+    #     debris_shapes = [DEFAULT_BLOCK_SHAPE] * self.num_debris
+    #     colors_set = [en.ShapeColor.RED, en.ShapeColor.BLUE, en.ShapeColor.YELLOW]
+    #     self.rng.shuffle(colors_set)
+    #     debris_colors = colors_set[: self.num_debris]
+        
+    #     first_subtask = False
+    #     second_subtask = False
+    #     third_subtask = False
+        
+    #     if self.index_seed_steps >= 30_000 and self.index_seed_steps < 530_000:
+    #         print("Subtask 3 activated")
+    #         first_subtask = False
+    #         second_subtask = False
+    #         third_subtask = True
+    #     elif self.index_seed_steps >= 830_000 and self.index_seed_steps < 1_330_000:
+    #         print("Subtask 2 activated")
+    #         first_subtask = False
+    #         second_subtask = True
+    #         third_subtask = False
+    #     elif self.index_seed_steps >= 1_630_000 and self.index_seed_steps < 2_130_000:
+    #         print("Subtask 1 activated")
+    #         first_subtask = True
+    #         second_subtask = False
+    #         third_subtask = False
+    #     else:
+    #         print("No subtask activated")
+    #         first_subtask = False
+    #         second_subtask = False
+    #         third_subtask = False
+                  
+    #     if first_subtask:
+    #         self.__debris_shapes = [
+    #             self._make_shape(
+    #                 shape_type=shape,
+    #                 color_name=color,
+    #                 init_pos=(x, 1.0) if color == en.ShapeColor.RED else (x, y),
+    #                 init_angle=0.0 if color == en.ShapeColor.RED else angle,
+    #             )
+    #             for (x, y, angle, shape, color) in zip(
+    #                 x_coords,
+    #                 y_coords,
+    #                 angles,
+    #                 debris_shapes,
+    #                 debris_colors,
+    #             )
+    #         ]
+    #         for (x, color) in zip(x_coords, debris_colors):
+    #             if color == en.ShapeColor.RED:
+    #                 x_red = x
+    #         robot_pos, robot_angle = (x_red, 0.55), 0.0
+    #         robot = self._make_robot(robot_pos, robot_angle)
+            
+    #     elif second_subtask:
+    #         self.__debris_shapes = [
+    #             self._make_shape(
+    #                 shape_type=shape,
+    #                 color_name=color,
+    #                 init_pos=(x, 1.0) if color == en.ShapeColor.RED or color == en.ShapeColor.BLUE else (x, y),
+    #                 init_angle=0.0 if color == en.ShapeColor.RED or color == en.ShapeColor.BLUE else angle,
+    #             )
+    #             for (x, y, angle, shape, color) in zip(
+    #                 x_coords,
+    #                 y_coords,
+    #                 angles,
+    #                 debris_shapes,
+    #                 debris_colors,
+    #             )
+    #         ]
+    #         for (x, color) in zip(x_coords, debris_colors):
+    #             if color == en.ShapeColor.BLUE:
+    #                 x_blue = x
+    #         robot_pos, robot_angle = (x_blue, 0.55), 0.0
+    #         robot = self._make_robot(robot_pos, robot_angle)
+            
+    #     elif third_subtask:
+    #         self.__debris_shapes = [
+    #             self._make_shape(
+    #                 shape_type=shape,
+    #                 color_name=color,
+    #                 init_pos=(x, 1.0) if color == en.ShapeColor.RED or color == en.ShapeColor.BLUE or color == en.ShapeColor.YELLOW else (x, y),
+    #                 init_angle=0.0 if color == en.ShapeColor.RED or color == en.ShapeColor.BLUE or color == en.ShapeColor.YELLOW else angle,
+    #             )
+    #             for (x, y, angle, shape, color) in zip(
+    #                 x_coords,
+    #                 y_coords,
+    #                 angles,
+    #                 debris_shapes,
+    #                 debris_colors,
+    #             )
+    #         ]
+    #         for (x, color) in zip(x_coords, debris_colors):
+    #             if color == en.ShapeColor.YELLOW:
+    #                 x_yellow = x
+    #         robot_pos, robot_angle = (x_yellow, 0.55), 0.0
+    #         robot = self._make_robot(robot_pos, robot_angle)
+            
+    #     else:
+    #         self.__debris_shapes = [
+    #             self._make_shape(
+    #                 shape_type=shape,
+    #                 color_name=color,
+    #                 init_pos=(x, y),
+    #                 init_angle=angle
+    #             )
+    #             for (x, y, angle, shape, color) in zip(
+    #                 x_coords,
+    #                 y_coords,
+    #                 angles,
+    #                 debris_shapes,
+    #                 debris_colors,
+    #             )
+    #         ]
+    #         robot_pos, robot_angle = DEFAULT_ROBOT_POSE
+    #         robot = self._make_robot(robot_pos, robot_angle)
+            
+    #     self.add_entities(self.__debris_shapes)
+
+    #     # Add robot last for draw order reasons.
+    #     self.add_entities([robot])
+
+    #     # Block lookup index.
+    #     self.__ent_index = en.EntityIndex(self.__debris_shapes)
+        
+    #     self.stage_completed = [False] * self.num_debris 
+    #     self.actual_goal_stage = 0
+    #     self.last_color_reward = 0
         
     #COMPLETELLY RANDOM FOR ROBOT AND BLOCKS
     # RANDOMIZED ROBOT AND BLOCKS WITH CONSTRAINTS
@@ -492,6 +499,214 @@ class SweepToTopEnv(BaseEnv):
     #     self.stage_completed = [False] * self.num_debris
     #     self.actual_goal_stage = 0
     #     self.last_color_reward = 0
+    
+    
+    ### CURRICULUM
+    # def on_reset(self) -> None:
+    #     # print("ON RESET EXECUTED")
+    #     subtask_len = 500_000
+    #     min_subtask_1_index = 1_030_000
+    #     min_subtask_2_index = 530_000
+    #     min_subtask_3_index = 30_000
+        
+    #     arena_l, arena_r, arena_b, arena_t = self.ARENA_BOUNDS_LRBT
+    #     wall_buffer = 0.2
+    #     arena_x_min, arena_x_max = arena_l + wall_buffer, arena_r - wall_buffer
+    #     arena_y_min, arena_y_max = arena_b + wall_buffer, arena_t - wall_buffer
+
+    #     goal_color = DEFAULT_GOAL_COLOR
+    #     if self.rand_colors:
+    #         goal_color = self.rng.choice(en.SHAPE_COLORS)
+    #     sensor = en.GoalRegion(
+    #         *DEFAULT_GOAL_XYHW,
+    #         goal_color,
+    #         dashed=False,
+    #     )
+    #     self.add_entities([sensor])
+    #     self.__sensor_ref = sensor
+
+    #     y_coords = [pose[0][1] for pose in DEFAULT_BLOCK_POSES]
+    #     x_coords = [pose[0][0] for pose in DEFAULT_BLOCK_POSES]
+    #     angles = [pose[1] for pose in DEFAULT_BLOCK_POSES]
+    #     self.starting_position = y_coords
+
+    #     debris_shapes = [DEFAULT_BLOCK_SHAPE] * self.num_debris
+    #     colors_set = [en.ShapeColor.RED, en.ShapeColor.BLUE, en.ShapeColor.YELLOW]
+    #     self.rng.shuffle(colors_set)
+    #     debris_colors = colors_set[: self.num_debris]
+
+    #     # Determine subtask
+    #     first_subtask = False
+    #     second_subtask = False
+    #     third_subtask = False
+    #     if self.index_seed_steps >= min_subtask_1_index and self.index_seed_steps < min_subtask_1_index + subtask_len:
+    #         print("SUBTASK 1 CHOOSEN")
+    #         first_subtask = True
+    #         second_subtask = False
+    #         third_subtask = False
+    #     elif self.index_seed_steps >= min_subtask_2_index and self.index_seed_steps < min_subtask_2_index + subtask_len:
+    #         print("SUBTASK 2 CHOOSEN")
+    #         second_subtask = True
+    #         first_subtask = False
+    #         third_subtask = False
+    #     elif self.index_seed_steps >= min_subtask_3_index and self.index_seed_steps < min_subtask_3_index + subtask_len:
+    #         print("SUBTASK 3 CHOOSEN")
+    #         third_subtask = True
+    #         first_subtask = False
+    #         second_subtask = False
+
+    #     def is_in_goal_zone(pos, margin=0.4):
+    #         goal_x, goal_y, goal_h, goal_w = DEFAULT_GOAL_XYHW
+    #         x, y = pos
+    #         in_x = (goal_x - margin) <= x <= (goal_x + goal_w + margin)
+    #         in_y = (goal_y - goal_h - margin) <= y <= (goal_y + margin)
+    #         return in_x and in_y
+
+    #     # Place blocks as in your subtask logic
+    #     if first_subtask:
+    #         if self.index_seed_steps <= min_subtask_1_index + subtask_len/4:
+    #             init_red_block_y = 0.7
+    #         elif self.index_seed_steps <= min_subtask_1_index + subtask_len/2:
+    #             init_red_block_y = 0.5
+    #         elif self.index_seed_steps <= min_subtask_1_index + 3*subtask_len/4:
+    #             init_red_block_y = 0.3
+    #         else:
+    #             init_red_block_y = 0.0
+                
+    #         self.__debris_shapes = [
+    #             self._make_shape(
+    #                 shape_type=shape,
+    #                 color_name=color,
+    #                 init_pos=(x, init_red_block_y) if color == en.ShapeColor.RED else (x, y),
+    #                 init_angle=0.0 if color == en.ShapeColor.RED else angle,
+    #             )
+    #             for (x, y, angle, shape, color) in zip(
+    #                 x_coords, y_coords, angles, debris_shapes, debris_colors
+    #             )
+    #         ]
+    #         # Find red block position
+    #         for block in self.__debris_shapes:
+    #             if block.color_name == en.ShapeColor.RED:
+    #                 block_pos = np.array(block.init_pos)
+    #                 break
+    #     elif second_subtask:
+    #         if self.index_seed_steps <= min_subtask_2_index + subtask_len/4:
+    #             init_blue_block_y = 0.7
+    #         elif self.index_seed_steps <= min_subtask_2_index + subtask_len/2:
+    #             init_blue_block_y = 0.5
+    #         elif self.index_seed_steps <= min_subtask_2_index + 3*subtask_len/4:
+    #             init_blue_block_y = 0.3
+    #         else:
+    #             init_blue_block_y = 0.0
+                
+    #         self.__debris_shapes = [
+    #             self._make_shape(
+    #                 shape_type=shape,
+    #                 color_name=color,
+    #                 init_pos= ((x, 1.0) if color == en.ShapeColor.RED else (x,init_blue_block_y) if color == en.ShapeColor.BLUE else (x, y)),
+    #                 init_angle=0.0 if color in [en.ShapeColor.RED, en.ShapeColor.BLUE] else angle,
+    #             )
+    #             for (x, y, angle, shape, color) in zip(
+    #                 x_coords, y_coords, angles, debris_shapes, debris_colors
+    #             )
+    #         ]
+    #         for block in self.__debris_shapes:
+    #             if block.color_name == en.ShapeColor.BLUE:
+    #                 block_pos = np.array(block.init_pos)
+    #                 break
+    #     elif third_subtask:
+    #         if self.index_seed_steps <= min_subtask_3_index + subtask_len/4:
+    #             init_yellow_block_y = 0.7
+    #         elif self.index_seed_steps <= min_subtask_3_index + subtask_len/2:
+    #             init_yellow_block_y = 0.5
+    #         elif self.index_seed_steps <= min_subtask_3_index + 3*subtask_len/4:
+    #             init_yellow_block_y = 0.3
+    #         else:
+    #             init_yellow_block_y = 0.0
+    #         self.__debris_shapes = [
+    #             self._make_shape(
+    #                 shape_type=shape,
+    #                 color_name=color,
+    #                 init_pos= ((x, 1.0) if color in [en.ShapeColor.RED, en.ShapeColor.BLUE] else (x,init_yellow_block_y) if color == en.ShapeColor.YELLOW else (x, y)),
+    #                 init_angle=0.0 if color in [en.ShapeColor.RED, en.ShapeColor.BLUE, en.ShapeColor.YELLOW] else angle,
+    #             )
+    #             for (x, y, angle, shape, color) in zip(
+    #                 x_coords, y_coords, angles, debris_shapes, debris_colors
+    #             )
+    #         ]
+    #         for block in self.__debris_shapes:
+    #             if block.color_name == en.ShapeColor.YELLOW:
+    #                 block_pos = np.array(block.init_pos)
+    #                 break
+    #     else:
+    #         self.__debris_shapes = [
+    #             self._make_shape(
+    #                 shape_type=shape,
+    #                 color_name=color,
+    #                 init_pos=(x, y),
+    #                 init_angle=angle
+    #             )
+    #             for (x, y, angle, shape, color) in zip(
+    #                 x_coords, y_coords, angles, debris_shapes, debris_colors
+    #             )
+    #         ]
+    #         block_pos = None  # No subtask, randomize robot as usual
+
+    #     # ...existing code...
+
+    #     # Randomize robot position near the block (if subtask), else default
+    #     max_tries = 1000
+    #     robot_pos = None
+    #     robot_angle = 0.0
+
+    #     if block_pos is not None:
+    #         # Calculate proportional distance based on block's y position
+    #         # Higher y position = closer to goal = robot should be closer to block
+    #         block_y = block_pos[1]
+    #         min_distance, max_distance =  0.35, 1.0
+            
+    #         for _ in range(max_tries):
+    #             angle = random.uniform( np.pi, 2 * np.pi)  
+    #             dist = random.uniform(min_distance, max_distance)
+    #             offset = np.array([np.cos(angle), np.sin(angle)]) * dist
+    #             robot_pos_candidate = block_pos + offset
+                
+    #             # print(f"Trying robot position: {robot_pos_candidate}, angle: {angle}, block position: {block_pos}, min_distance: {min_distance}, max_distance: {max_distance}")
+                
+    #             # Check if position is valid
+    #             if not is_in_goal_zone(robot_pos_candidate):
+    #                 if (arena_x_min <= robot_pos_candidate[0] <= arena_x_max and
+    #                     arena_y_min <= robot_pos_candidate[1] <= arena_y_max):
+                        
+    #                     # Check distance to ALL blocks (not just the target)
+    #                     too_close_to_blocks = False
+    #                     for block in self.__debris_shapes:
+    #                         block_xy = np.array(block.init_pos)
+    #                         if np.linalg.norm(np.array(robot_pos_candidate) - block_xy) < 0.2:
+    #                             too_close_to_blocks = True
+    #                             break
+                        
+    #                     if not too_close_to_blocks:
+    #                         robot_pos = tuple(robot_pos_candidate)
+    #                         robot_angle = math.atan2(block_pos[1] - robot_pos[1], block_pos[0] - robot_pos[0]) - np.pi / 2
+    #                         robot_angle = (robot_angle + 2 * np.pi) % (2 * np.pi)
+
+    #                         break    
+    #     # robot_angle = 0.0
+
+    #     # Ensure we have a valid robot position
+    #     if robot_pos is None:
+    #         robot_pos = DEFAULT_ROBOT_POSE[0]
+
+    #     robot = self._make_robot(robot_pos, robot_angle)
+        
+    #     self.add_entities(self.__debris_shapes)
+    #     self.add_entities([robot])
+    #     self.__ent_index = en.EntityIndex(self.__debris_shapes)
+    #     self.stage_completed = [False] * self.num_debris
+    #     self.actual_goal_stage = 0
+    #     self.last_color_reward = 0
+            
         
 
     def get_state(self) -> np.ndarray:
@@ -524,7 +739,7 @@ class SweepToTopEnv(BaseEnv):
         if self.action_dim == 3:
             state.append(self._robot.finger_width)
         state = np.array(state, dtype=np.float32)
-        goal_one_hot = np.zeros(self.num_debris, dtype=np.float32)
+        goal_one_hot = np.zeros(self.num_debris+1, dtype=np.float32)
         goal_one_hot[self.actual_goal_stage] = 1.0
         return np.concatenate([state, goal_one_hot], axis=0)
 
@@ -616,7 +831,9 @@ class SweepToTopEnv(BaseEnv):
         push_reward = 0
         grip_reward = 0
         
+        # print(f"State: {self.stage_completed}, Actual goal stage: {self.actual_goal_stage}, Index: {self.index_seed_steps}, In Goal Red: {in_goal(distances['red'][1])}, In Goal Blue: {in_goal(distances['blue'][1])}, In Goal Yellow: {in_goal(distances['yellow'][1])}")
         if not self.stage_completed[0]:
+            # print("Stage 0: Moving to red block")
             # Reward for moving the robot near the red block
             moving_to_block_reward += (1.0 / (1.0 + distances["red"][3]))
             push_reward += (distances["red"][4] - distances["red"][2]) / distances["red"][4]
@@ -626,6 +843,7 @@ class SweepToTopEnv(BaseEnv):
                 self.stage_completed[0] = True
                 self.actual_goal_stage = 1
         elif not self.stage_completed[1] and in_goal(distances["red"][1]):
+            # print("Stage 1: Moving to blue block")
             # Reward for moving the robot near the blue block
             moving_to_block_reward += 1.2 + 1.0 / (1.0 + distances["blue"][3])
             push_reward += 1.2 + (distances["blue"][4] - distances["blue"][2]) / distances["blue"][4]
@@ -635,6 +853,7 @@ class SweepToTopEnv(BaseEnv):
                 self.stage_completed[1] = True
                 self.actual_goal_stage = 2
         elif not self.stage_completed[2] and in_goal(distances["blue"][1]) and in_goal(distances["red"][1]):
+            # print("Stage 2: Moving to yellow block")
             # Reward for moving the robot near the yellow block
             moving_to_block_reward += 2.4 + 1.0 / (1.0 + distances["yellow"][3])
             push_reward += 2.4 + (distances["yellow"][4] - distances["yellow"][2]) / distances["yellow"][4]
@@ -642,14 +861,17 @@ class SweepToTopEnv(BaseEnv):
             grip_reward = 2 if self.is_block_gripped(yellow_block_x, yellow_block_y) else 0.0
             if in_goal(distances["yellow"][1]):
                 self.stage_completed[2] = True
+                self.actual_goal_stage = 3
             else:
                 self.last_color_reward = 0.3 * moving_to_block_reward + 0.7 * push_reward
-        reward = 0.3 * moving_to_block_reward + 0.7 * push_reward 
-        
+         
         if self.stage_completed[0] and self.stage_completed[1] and self.stage_completed[2]:
+            # print("All blocks in goal area, finalizing reward")
             # All blocks are in the goal area
             # To keep the final reward at the higher value possible without falling to zero
-            reward = self.last_color_reward 
+            reward = 4.0 + self.last_color_reward 
+        else:
+            reward = 0.3 * moving_to_block_reward + 0.7 * push_reward
  
         return reward
             
