@@ -92,7 +92,8 @@ MODELS = {
     "resnet18_features": models.Resnet18RawImageNetFeaturesNet,
     "resnet18_linear_ae": models.Resnet18LinearEncoderAutoEncoderNet,
     "resnet50_linear": models.ResNet50,
-    "reds_model": models.REDSRewardModel
+    "reds_model": models.REDSRewardModel, 
+    "dinov2": models.DINOv2HFLinearEncoderNet
 }
 TRAINERS = {
     "tcc": trainers.TCCTrainer,
@@ -159,6 +160,8 @@ def model_from_config(config):
   elif config.model.model_type == "resnet50_linear":
     kwargs["embedding_size"] = config.model.embedding_size
   elif config.model.model_type == "reds_model":
+    kwargs["embedding_size"] = config.model.embedding_size
+  elif config.model.model_type == "dinov2":
     kwargs["embedding_size"] = config.model.embedding_size
   return MODELS[config.model.model_type](**kwargs)
 

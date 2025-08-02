@@ -33,7 +33,7 @@ def get_config():
   # ================================================= #
   # Main parameters.
   # ================================================= #
-  config.save_dir = "/tmp/xirl-lianniello/rl_runs/"
+  config.save_dir = "/home/liannello/xirl/experiment_results/Egocentric/Results"
 
   # Set this to True to allow CUDA to find the best convolutional algorithm to
   # use for the given parameters. When False, cuDNN will deterministically
@@ -50,19 +50,23 @@ def get_config():
   config.frame_stack = 3
 
   config.reward_wrapper = ml_collections.ConfigDict()
-  config.reward_wrapper.pretrained_path = "/tmp/xirl/pretrain_runs/dataset=xmagical_mode=same_algo=xirl_embodiment=gripper_uid=SubtaskXirl-EGO"
+  config.reward_wrapper.pretrained_path = "/home/liannello/xirl/experiment_results/Egocentric/pretraining/dataset=xmagical_mode=same_algo=xirl_embodiment=gripper=EGO_SubtaskXirl"
+  # config.reward_wrapper.pretrained_path = None
   # Can be one of ['distance_to_goal', 'goal_classifier', holdr].
-  config.reward_wrapper.type = "reds"
+  config.reward_wrapper.type = "holdr"
+
+  # Vector environment parameters for DDP
+  config.num_envs_per_process = 3  # Number of parallel environments per DDP process
 
   # ================================================= #
   # Training parameters.
   # ================================================= #
-  config.num_train_steps = 2_000_000
+  config.num_train_steps = 10_000_000
   config.replay_buffer_capacity = 1_000_000
-  config.num_seed_steps = 20_000
+  config.num_seed_steps = 30_000
   config.num_eval_episodes = 150
-  config.eval_frequency = 20_000
-  config.checkpoint_frequency = 200_000
+  config.eval_frequency = 50_000
+  config.checkpoint_frequency = 300_000
   config.log_frequency = 20_000
   config.save_video = True
 
@@ -76,7 +80,7 @@ def get_config():
   config.sac.action_range = action_range
   config.sac.discount = 0.99
   config.sac.init_temperature = 0.3
-  config.sac.alpha_lr = 1e-4
+  config.sac.alpha_lr = 1e-5
   config.sac.alpha_betas = [0.9, 0.999]
   config.sac.actor_lr = 1e-4
   config.sac.actor_betas = [0.9, 0.999]
@@ -85,7 +89,7 @@ def get_config():
   config.sac.critic_betas = [0.9, 0.999]
   config.sac.critic_tau = 0.005
   config.sac.critic_target_update_frequency = 2
-  config.sac.batch_size = 1024
+  config.sac.batch_size = 2048
   config.sac.learnable_temperature = True
 
   # ================================================= #

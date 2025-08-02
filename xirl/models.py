@@ -512,6 +512,122 @@ class ResNet50(SelfSupervisedModel):
         "feats": feats_flat,
         "embs": embs,
     }
+        
+class DINOv2HFLinearEncoderNet(SelfSupervisedModel):
+    """
+    Alternative DINOv2 implementation using Hugging Face Transformers.
+    
+    This provides more control over preprocessing and model configuration
+    but requires the transformers library.
+    
+    Args:
+        embedding_size (int): Size of the output embeddings
+        model_name (str): HuggingFace model name. Options:
+            - 'facebook/dinov2-small': ViT-Small (21M params, 384 dim)
+            - 'facebook/dinov2-base': ViT-Base (86M params, 768 dim) [DEFAULT]
+            - 'facebook/dinov2-large': ViT-Large (300M params, 1024 dim)
+            - 'facebook/dinov2-giant': ViT-Giant (1.1B params, 1536 dim)
+        freeze_backbone (bool): Whether to freeze DINOv2 backbone weights
+        *args, **kwargs: Arguments passed to SelfSupervisedModel
+    """
+    
+    def __init__(
+        self,
+        embedding_size: int,
+        model_name: str = 'facebook/dinov2-base',
+        freeze_backbone: bool = True,
+        *args,
+        **kwargs
+    ):
+        super().__init__(*args, **kwargs)
+        
+        try:
+            from transformers import AutoImageProcessor, AutoModel
+        except ImportError:
+            raise ImportError("Please install transformers: pip install transformers")
+            
+        self.model_name = model_name
+        self.freeze_backbone = freeze_backbone
+        
+        # Load processor and model
+        self.processor = AutoImageProcessor.from_pretrained(model_name)
+        self.backbone = AutoModel.from_pretrained(model_name)
+        
+        # Freeze backbone if specified
+        if self.freeze_backbone:
+            for param in self.backbone.parameters():
+                param.requires_grad = False
+                
+        # Get backbone dimension
+        self.backbone_dim = self.backbone.config.hidden_size
+        
+        # Linear encoder
+        self.encoder = nn.Linear(self.backbone_dim, embedding_size)
+        
+        # Initialize encoder weights
+        nn.init.xavier_uniform_(self.encoder.weight)
+        nn.init.zeros_(self.encoder.bias)
+        
+    def preprocess_images(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Preprocess images for DINOv2 (normalize to [0,1] if needed).
+        
+        Args:
+            x: Input tensor, either in [0,1] or [0,255] range
+            
+        Returns:
+            Preprocessed tensor in [0,1] range
+        """
+        # Check if images are in [0,255] range and normalize if needed
+        if x.max() > 1.0:
+            x = x / 255.0
+        return x
+        
+    def forward(self, x: torch.Tensor) -> SelfSupervisedOutput:
+        """
+        Forward pass through DINOv2 backbone and encoder.
+        
+        Args:
+            x: Video frames of shape (B, T, C, H, W)
+            
+        Returns:
+            SelfSupervisedOutput containing frames, features, and embeddings
+        """
+        batch_size, t, c, h, w = x.shape
+        
+        # Flatten batch and time dimensions
+        x_flat = x.view((batch_size * t, c, h, w))
+        
+        # Preprocess images
+        x_flat = self.preprocess_images(x_flat)
+        
+        # Extract features using DINOv2
+        if self.freeze_backbone:
+            with torch.no_grad():
+                outputs = self.backbone(pixel_values=x_flat)
+                feats = outputs.last_hidden_state[:, 0]  # [CLS] token
+        else:
+            outputs = self.backbone(pixel_values=x_flat)
+            feats = outputs.last_hidden_state[:, 0]  # [CLS] token
+            
+        # Apply linear encoder
+        embs = self.encoder(feats)
+        
+        # Apply normalization if specified
+        if self.normalize_embeddings:
+            embs = embs / (embs.norm(dim=-1, keepdim=True) + 1e-7)
+            
+        # Apply learnable temperature if specified
+        if self.learnable_temp:
+            logit_scale = self.logit_scale.exp()
+            embs = logit_scale * embs
+            
+        # Reshape back to (B, T, -1)
+        embs = embs.view((batch_size, t, -1))
+        feats = feats.view((batch_size, t, -1))
+        
+        return SelfSupervisedOutput(frames=x, feats=feats, embs=embs)
+
 
 class MLP_REDS(nn.Module):
     def __init__(

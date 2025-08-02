@@ -241,7 +241,7 @@ class ReplayBufferHOLDR(ReplayBufferLearnedReward):
         subtask_means,
         distance_scale,
         subtask_threshold=5.0,
-        subtask_cost=3.0,
+        subtask_cost=2.0,
         subtask_hold_steps=1,
         **base_kwargs,
     ):
@@ -258,7 +258,7 @@ class ReplayBufferHOLDR(ReplayBufferLearnedReward):
 
         self._subtask_means = np.atleast_2d(subtask_means)  # (num_subtasks, emb_dim)
         self._distance_scale = distance_scale               # (num_subtasks,)
-        self._num_subtasks = len(subtask_means) + 1
+        self._num_subtasks = len(subtask_means)
 
         # Subtask tracking
         self._subtask = 0
@@ -267,15 +267,13 @@ class ReplayBufferHOLDR(ReplayBufferLearnedReward):
         self._subtask_hold_steps = subtask_hold_steps
         self._subtask_solved_counter = 0
         self._non_decreasing_reward = False
-        self._pred_reward = 0.0
         
-        self._distance_normalizer = 5
 
     def reset_state(self):
         """Reset subtask tracking variables."""
         self._subtask = 0
         self._subtask_solved_counter = 0
-        self._pred_reward = 0.0
+
 
     def _compute_embedding_distance(self, emb, goal_emb, subtask_idx):
         """Compute the scaled distance between the embedding and the goal embedding."""
@@ -321,52 +319,27 @@ class ReplayBufferHOLDR(ReplayBufferLearnedReward):
             self._subtask_solved_counter = 0
             
     def _get_reward_from_image(self):
+        print("REPLAY-BUFFER: Computing HOLDR-based reward from image.")
         """Compute the HOLDR-based reward for the current batch of pixels."""
         image_tensors = [self._pixel_to_tensor(i) for i in self.pixels_staging]
         image_tensors = torch.cat(image_tensors, dim=1)
         embs = self.model.infer(image_tensors).numpy().embs  # Shape: (batch_size, emb_dim)
-        # pdb.set_trace()
-        # embs = self.model.module.infer(image_tensors).numpy().embs  # Shape: (batch_size, emb_dim)
-        # subtasks = []
+        # embs = self.model.module.infer(image_tensors).numpy().embs
+        
         rewards = []
         for emb in embs:
-            # Current subtask goal
-            # dists = [np.linalg.norm(emb - mean) for mean in self._subtask_means]
-            # self._subtask = np.argmin(dists)
-            # subtasks.append(self._subtask)
             if self._subtask >= self._num_subtasks-1:
                 reward = self._subtask_cost * self._subtask
             else:
-                # If the subtask index exceeds the number of subtasks, use the last one
+                            
                 goal_emb = self._subtask_means[self._subtask]
-            
-                # Scale the goal embedding
-
-                # Distance-based reward
                 dist = self._compute_embedding_distance(emb, goal_emb, self._subtask)
-                  # goal_dist = self._compute_embedding_distance(goal_emb, goal_emb, self._subtask)
-                  # shaping = (self._num_subtasks - self._subtask) * self._subtask_cost
-                  
-                  # if self._non_decreasing_reward:
-                  #     reward = self._pred_reward + (1.0 - dist)
-                  # else:
-                  #     reward = - (dist + shaping) / self._distance_normalizer
-                  # reward = - max(0.0, dist - goal_dist) / self._distance_normalizer
-                  
-                step_reward = dist
+                      
+                step_reward = dist  # Base on distance to goal
                 bonus_reward = self._subtask * self._subtask_cost
                 reward = step_reward + bonus_reward
-                # reward = (reward / 6.0) - 1.0
-
-            
-                # if self._subtask == 1:
-                #     print("Subtask 1 completed, reward:", reward)
-                # elif self._subtask == 2:
-                #     print("Subtask 2 completed, reward:", reward)
-
-                # Check if the subtask is completed
                 self._check_subtask_completion(dist, reward)
-
+            
             rewards.append(reward)
 
         # pdb.set_trace()
