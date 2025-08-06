@@ -160,7 +160,7 @@ def main(_):
     model.to(device).eval()
     rews = []
     print(FLAGS.experiment_path)
-    text_phrases = ["The robot moves the red block in the goal zone",  "The robot moves the blue block in the goal zone" ,  "The robot moves the yellow block in the goal zone"]
+    text_phrases = ["There must be a red block in the green area",  "There must be a red block and a blue block in the green area" ,  "There must be a red block, a blue block and  a yellow block in the green areae"]
     text_features = []
     for phrase in text_phrases:
     # Pass as a batch of 1 video, 1 phrase
@@ -210,7 +210,7 @@ def main(_):
     plt.tight_layout()
 
     # Save the comprehensive plot
-    save_path = os.path.join("/home/liannello/xirl/experiment_results/Allocentric/training", "ALLO_Reds_Correct.png")
+    save_path = os.path.join("/home/lianniello/xirl_thesis/experiment_results/Allocentric/training", "Allo_Reds_NewText_Wrong.png")
     plt.savefig(save_path, bbox_inches='tight', dpi=300)
     print(f"Saved comprehensive analysis plot to: {save_path}")
     plt.close()
@@ -229,7 +229,7 @@ def main(_):
     plt.grid(True)
 
     # Save the cosine similarity plot
-    cosine_save_path = os.path.join("/home/liannello/xirl/experiment_results/Allocentric/training", "ALLO_Reds_Cosine_Similarity_Correct.png")
+    cosine_save_path = os.path.join("/home/lianniello/xirl_thesis/experiment_results/Allocentric/training", "Allo_Reds_Cosine_Similarity_Correct.png")
     plt.savefig(cosine_save_path, bbox_inches='tight', dpi=300)
     print(f"Saved cosine similarity plot to: {cosine_save_path}")
     plt.close()
@@ -245,7 +245,7 @@ def main(_):
     plt.grid(True)
 
     # Save the continuity matrix plot
-    continuity_save_path = os.path.join("/home/liannello/xirl/experiment_results/Allocentric/training", "ALLO_Reds_Continuity_Matrix_Correct.png")
+    continuity_save_path = os.path.join("/home/lianniello/xirl_thesis/experiment_results/Allocentric/training", "Allo_Reds_Continuity_Matrix_Correct.png")
     plt.savefig(continuity_save_path, bbox_inches='tight', dpi=300)
     print(f"Saved continuity matrix plot to: {continuity_save_path}")
     plt.close()

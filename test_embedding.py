@@ -79,13 +79,12 @@ def setup():
   return model, downstream_loaders
 
 def compute_embedding_distance(emb, goal_emb, subtask_idx):
-    # dist = np.linalg.norm(emb - goal_emb)
-    # # dist *= self._distance_scale[subtask_idx]
-    # mod_dist = distance_reward(dist)
-    mod_dist = np.dot(emb, goal_emb) / (np.linalg.norm(emb) * np.linalg.norm(goal_emb))
-    return 1, mod_dist
+    dist = np.linalg.norm(emb - goal_emb)
+    # dist *= self._distance_scale[subtask_idx]
+    mod_dist = distance_reward(dist)
+    return dist, mod_dist
 
-def distance_reward(d, alpha=0.00001, beta=0.055, gamma=1e-3):
+def distance_reward(d, alpha=0.001, beta=0.01, gamma=1e-3):
     return -alpha * d**2 - beta * np.sqrt(d**2 + gamma)
 
 def check_subtask_completion(dist, current_reward, subtask, subtask_solved_counter,
@@ -94,7 +93,7 @@ def check_subtask_completion(dist, current_reward, subtask, subtask_solved_count
     prev_reward = 0.0
     # Logic mirrors the provided _check_subtask_completion
     if subtask == 0:
-        if dist > 0.95:
+        if dist > -0.10:
             subtask_solved_counter += 1
             if subtask_solved_counter >= subtask_hold_steps:
                 subtask = min(num_subtasks - 1, subtask + 1)
@@ -105,7 +104,7 @@ def check_subtask_completion(dist, current_reward, subtask, subtask_solved_count
             subtask_solved_counter = 0
     elif subtask == 1:
         # Hardcoded threshold for subtask 1, as in your example
-        if dist > 0.95:
+        if dist > -0.20:
             subtask_solved_counter += 1
             if subtask_solved_counter >= subtask_hold_steps:
                 subtask = min(num_subtasks - 1, subtask + 1)
@@ -116,7 +115,7 @@ def check_subtask_completion(dist, current_reward, subtask, subtask_solved_count
             subtask_solved_counter = 0
     elif subtask == 2:
         # Hardcoded threshold for subtask 2, as in your example
-        if dist > 0.95:
+        if dist > -0.3:
             subtask_solved_counter += 1
             if subtask_solved_counter >= subtask_hold_steps:
                 subtask = 3
@@ -128,19 +127,7 @@ def check_subtask_completion(dist, current_reward, subtask, subtask_solved_count
     # You can add more elifs for further subtasks if needed
     return prev_reward, subtask, subtask_solved_counter
 
-def compute_dense_reward(subtask_means, subtask, emb):
-    """Dense reward based on distance to current subtask goal."""
-    goal_emb = subtask_means[subtask]
-    
-    # Raw distance in embedding space
-    raw_distance = np.linalg.norm(emb - goal_emb)
-    
-    # Convert to reward (closer = higher reward)
-    # Use exponential decay for smooth gradients
-    dense_reward = np.exp(-raw_distance / 2.0)  # Range: [0, 1]
-    
-    return dense_reward - 0.5  # Center around 0: [-0.5, 0.5]
-  
+
 def main(_):
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
   print(f"Using device: {device}")
@@ -167,7 +154,7 @@ def main(_):
   embs = embed(model, downstream_loader, device)
   subtask = 0
   non_decreasing_reward = False
-  subtask_cost = 2.0
+  subtask_cost = 0
   subtask_threshold = 5.5 
   subtask_hold_steps = 1
   distance_normalizer = 5
@@ -178,11 +165,13 @@ def main(_):
   cosine_similarity_emb_subtask_3_vec = []
   previous_reward = -10.0
   
-  best_dist_this_subtask = None
-  steps_in_current_subtask = 0
-  prev_subtask = -1
-  transition_phase = False
-  transition_steps = 0
+  # Track the previous subtask to detect transitions
+  previous_subtask = 0
+  transition_period = 10  # Number of frames to smooth the transition
+  transition_counter = 0
+  transition_baseline_distance = None  # Will store the initial distance after transition
+  previous_distance = None  # Track previous distance to detect when distance starts decreasing
+  monotonic_reward = -10.0  # Ensure reward never decreases (initialize with low value)
   
   i = 0
   for emb in embs: 
@@ -204,20 +193,20 @@ def main(_):
     else:
           goal_emb = subtask_means[subtask]
           old_dist, dist = compute_embedding_distance(emb, goal_emb, subtask) 
-
-          # if abs(dist) > 1.0:  # Very far (handles transition cases)
-          #   base_reward = np.tanh(dist / 2.5)
-          # elif abs(dist) > 0.5:  # Far  
-          #   base_reward = np.tanh(dist / 1.5)
-          # else:  # Close
-          #   base_reward = np.tanh(dist / 0.5)
-                 
           
-          print(f"Frame: {i}, Subtask {subtask},OLDDIST:{old_dist}, Dist:{dist}, Cosine Similarity: {cosine_similarity_emb_subtask_1}, {cosine_similarity_emb_subtask_2}, {cosine_similarity_emb_subtask_3}")
-              
+          step_reward = dist  # Base on distance to goal
           bonus_reward = subtask * subtask_cost
-          reward = dist + bonus_reward
+          current_reward = step_reward + bonus_reward
+                
           
+          # Use the monotonic reward as our actual reward
+          reward = current_reward
+          # reward = np.tanh(reward/0.5)
+          # if reward < previous_reward:
+          #     reward = previous_reward
+          # else:
+          #     previous_reward = reward
+          print(f"Frame: {i}, Subtask {subtask}, Reward{reward}, Cosine Similarity: {cosine_similarity_emb_subtask_1}, {cosine_similarity_emb_subtask_2}, {cosine_similarity_emb_subtask_3}")
           # print(f"Reward: {reward}, Subtask: {subtask}, Distance: {dist}")
           rews.append(reward)      
           prev_reward, subtask, subtask_solved_counter = check_subtask_completion(
@@ -243,13 +232,13 @@ def main(_):
   plt.ylabel("Cosine Similarity")
   plt.legend()
   plt.grid(True)
-  cosine_save_path = os.path.join("/home/lianniello/xirl_thesis/experiment_results/Egocentric/training_ego", "CosineSimilarity_SubtaskXirl_Wrong.png")
+  cosine_save_path = os.path.join("/home/lianniello/xirl_thesis/", "CosineSimilarity_SmoothTransitions.png")
   plt.savefig(cosine_save_path, bbox_inches='tight')
   print(f"Saved cosine similarity plot to: {cosine_save_path}")
   plt.close()
 
   # Save the plot instead of showing it
-  save_path = os.path.join("/home/lianniello/xirl_thesis/experiment_results/Egocentric/training_ego", "ALLO_NEWDIST_TEST.png")
+  save_path = os.path.join("/home/lianniello/xirl_thesis/", "ALLO_NEWDIST_TEST.png")
   plt.savefig(save_path, bbox_inches='tight')
   print(f"Saved reward plot to: {save_path}")
   plt.close()
