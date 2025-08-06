@@ -26,7 +26,7 @@ def get_config():
     config.algorithm = "tcc"
     
     # Training configuration
-    config.optim.train_max_iters = 3_000  # Can be adjusted based on your needs
+    config.optim.train_max_iters = 6_000  # Can be adjusted based on your needs
     config.optim.learning_rate = 1e-4      # DINOv2 typically uses lower learning rates
     config.optim.weight_decay = 0.04       # DINOv2 recommended weight decay
     config.optim.warmup_steps = 1000       # Warmup steps for stable training
@@ -39,7 +39,7 @@ def get_config():
     # Model configuration - DINOv2 specific
     config.model.model_type = "dinov2"
     config.model.dinov2_variant = "dinov2_vitb14"  # Options: dinov2_vits14, dinov2_vitb14, dinov2_vitl14, dinov2_vitg14
-    config.model.embedding_size = 32         # Larger embedding for DINOv2 features
+    config.model.embedding_size = 128        # Larger embedding for DINOv2 features
     config.model.normalize_embeddings = True       # DINOv2 benefits from normalized embeddings
     config.model.learnable_temp = True             # Enable learnable temperature
     config.model.freeze_backbone = True            # Freeze DINOv2 backbone for transfer learning

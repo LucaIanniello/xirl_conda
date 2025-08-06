@@ -91,7 +91,7 @@ def embed_subtasks(
     for batch in tqdm(iter(class_loader), leave=False):
       video_id = batch["video_name"][0].split("/")[-1]
       subgoal_frames = subgoal_data[video_id]
-      out = model.module.infer(batch["frames"].to(device))
+      out = model.infer(batch["frames"].to(device))
       # out = model.module.infer(batch["frames"].to(device))
       emb = out.numpy().embs
       init_embs.append(emb[0, :])
@@ -155,10 +155,19 @@ def setup():
 
 
 def main(_):
+  # Add these at the very beginning
+  torch.manual_seed(42)
+  torch.cuda.manual_seed_all(42)
+  np.random.seed(42)
+  torch.backends.cudnn.deterministic = True
+  torch.backends.cudnn.benchmark = False
+  
+  # Also fix the unused embed() function for consistency
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
   model, downstream_loader = setup()
   model.to(device).eval()
-  subgoal_file_path = "/home/liannello/xirl/EgoSubtaskDataset/subgoal_frames.json"
+
+  subgoal_file_path = "/home/liannello/xirl/DatasetInvisibleRobot/subgoal_frames.json"
   
   subgoal_data = read_subgoal_from_file(subgoal_file_path)
   subtask_means, distance_scale = embed_subtasks(model, downstream_loader, device, subgoal_data)

@@ -51,7 +51,7 @@ class EvalManager:
       for batch_idx, batch in enumerate(valid_loader):
         if eval_iters is not None and batch_idx >= eval_iters:
           break
-        outs.append(model.module.infer(batch["frames"].to(device)).numpy())
+        outs.append(model.infer(batch["frames"].to(device)).numpy())
         # outs.append(
         #     model.module.infer(batch["frames"].to(device)).numpy())
       loader_to_output[action_name] = outs
@@ -79,7 +79,7 @@ class EvalManager:
     Returns:
       A dict mapping from evaluator name to EvaluatorOutput.
     """
-    model.module.eval()
+    model.eval()
     logging.debug("Embedding downstream dataset...")
     downstream_outputs = EvalManager.embed(model, downstream_loader, device,
                                            eval_iters)

@@ -40,6 +40,7 @@ ALGO_TO_CONFIG = {
     "raw_imagenet": "configs/xmagical/pretraining/imagenet.py",
     "holdr": "configs/xmagical/pretraining/holdr.py",
     "reds": "configs/xmagical/pretraining/reds.py",
+    "dinov2": "configs/xmagical/pretraining/dinov2.py",
 }
 # We want to pretrain on the entire demonstrations.
 MAX_DEMONSTRATIONS = -1
@@ -70,7 +71,7 @@ def main(_):
     }
     if FLAGS.unique_name:
       kwargs["uid"] = unique_id()
-    experiment_name = string_from_kwargs(**kwargs)
+    experiment_name = string_from_kwargs(**kwargs) 
     logging.info("Experiment name: %s", experiment_name)
 
     subprocess.run(
@@ -98,7 +99,7 @@ def main(_):
 
     # Note: This assumes that the config.root_dir value has not been
     # changed to its default value of 'tmp/xirl/pretrain_runs/'.
-    exp_path = osp.join("/tmp/xirl-lianniello/pretrain_runs/", experiment_name)
+    exp_path = osp.join("/home/liannello/xirl/experiment_results/InvRobot+Dinov2/Dinov2/", experiment_name)
 
     # The 'goal_classifier' baseline does not need to compute a goal embedding.
     if FLAGS.algo != "goal_classifier":
