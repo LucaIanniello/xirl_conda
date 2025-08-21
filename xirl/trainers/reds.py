@@ -18,6 +18,7 @@ class REDSRewardTrainer(Trainer):
         self.epic_eps = getattr(reds_cfg, "epic_eps", 5e-2)
         self.lambda_epic_reg = getattr(reds_cfg, "lambda_epic_reg", 1.0)
         
+        
     def train_one_iter(self, batch):
         """Single forward + backward pass of the model.
 
@@ -166,25 +167,29 @@ class REDSRewardTrainer(Trainer):
         return gt_rewards, texts,video_names
 
     def _compute_epic_loss(self, pred_rewards, gt_rewards):
-        # pred_rewards: list of (T, 1)
-        # gt_rewards: list of (T,)
         batch_size = len(pred_rewards)
         losses = []
         for i in range(batch_size):
-            # Flatten current trajectory
             pred_i = pred_rewards[i].view(-1)
             gt_i = gt_rewards[i].view(-1)
-            # Canonical set: all other trajectories in the batch
-            pred_canon = torch.cat([pred_rewards[j].view(-1) for j in range(batch_size) if j != i])
-            gt_canon = torch.cat([gt_rewards[j].view(-1) for j in range(batch_size) if j != i])
+            
+            # Truncate both to the minimal length to avoid shape mismatch
+            min_len = min(pred_i.size(0), gt_i.size(0))
+            pred_i = pred_i[:min_len]
+            gt_i = gt_i[:min_len]
+            
+            # Canonical set: all other trajectories concatenated
+            pred_canon = torch.cat([pred_rewards[j].view(-1)[:min_len] for j in range(batch_size) if j != i])
+            gt_canon = torch.cat([gt_rewards[j].view(-1)[:min_len] for j in range(batch_size) if j != i])
+            
             # Center by canonical mean
             pred_centered = pred_i - pred_canon.mean()
             gt_centered = gt_i - gt_canon.mean()
-            # Pearson distance between centered rewards
+            
             loss = self.compute_pearson_distance(pred_centered, gt_centered)
             losses.append(loss)
-        # Average over batch
         return torch.stack(losses).mean()
+
     
     def supervised_contrastive_loss(self, features, labels, temperature=0.1):
         """

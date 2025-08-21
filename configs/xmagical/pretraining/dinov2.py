@@ -34,12 +34,12 @@ def get_config():
     # Frame sampling configuration
     config.frame_sampler.strategy = "uniform"
     config.frame_sampler.uniform_sampler.offset = 0
-    config.frame_sampler.num_frames_per_sequence = 50
+    config.frame_sampler.num_frames_per_sequence = 40
     
     # Model configuration - DINOv2 specific
     config.model.model_type = "dinov2"
     config.model.dinov2_variant = "dinov2_vitb14"  # Options: dinov2_vits14, dinov2_vitb14, dinov2_vitl14, dinov2_vitg14
-    config.model.embedding_size = 128        # Larger embedding for DINOv2 features
+    config.model.embedding_size = 32        # Larger embedding for DINOv2 features
     config.model.normalize_embeddings = True       # DINOv2 benefits from normalized embeddings
     config.model.learnable_temp = True             # Enable learnable temperature
     config.model.freeze_backbone = True            # Freeze DINOv2 backbone for transfer learning
