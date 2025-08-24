@@ -31,7 +31,9 @@ from ml_collections import config_flags
 import numpy as np
 import os
 import wandb
-
+import json
+import datetime
+import torch
 
   
 # pylint: disable=logging-fstring-interpolation
@@ -59,6 +61,7 @@ def evaluate(policy, env, num_episodes, rank):
     stats = collections.defaultdict(list)
     last_episode_frames = []
     last_episode_rewards = []
+    last_episode_actions = []
     
     for i in range(num_episodes):
         observation, done = env.reset(), False
@@ -73,6 +76,16 @@ def evaluate(policy, env, num_episodes, rank):
                 last_episode_frames.append(frame)
             
             action = policy.module.act(observation, sample=False)
+            
+            if i == num_episodes - 1:
+                if isinstance(action, torch.Tensor):
+                    action_np = action.cpu().numpy()
+                else:
+                    action_np = action  # Already numpy array
+                    
+                last_episode_actions.append(action_np.tolist())
+                
+                
             observation, reward, done, info = env.step(action)
             episode_reward += reward
             
@@ -86,6 +99,21 @@ def evaluate(policy, env, num_episodes, rank):
             stats["eval_score"].append(info["eval_score"])
         episode_rewards.append(episode_reward)
     
+    if rank == 0:  # Only save on rank 0
+        # Get experiment directory from env's save_dir
+        exp_dir = os.path.dirname(os.path.dirname(env.save_dir))
+        actions_file = os.path.join(exp_dir, "last_evaluation_actions.json")
+        
+        action_data = {
+            "actions": last_episode_actions,
+            "total_reward": sum(last_episode_rewards),
+        }
+        
+        with open(actions_file, 'w') as f:
+            json.dump(action_data, f, indent=2)
+        
+        logging.info(f"Saved last evaluation actions to {actions_file}")
+    
     # Log video and reward plot to wandb
     if last_episode_frames and FLAGS.wandb and rank == 0:
         # Convert frames to proper format (time, channel, height, width)
@@ -95,8 +123,6 @@ def evaluate(policy, env, num_episodes, rank):
             "eval/step": i  # Use current training step
         })
         
-        
-        # Optional: Plot reward evolution
         try:
             import matplotlib.pyplot as plt
             plt.figure(figsize=(10, 6))
@@ -153,6 +179,8 @@ def main(_):
   pid = os.getpid()
   print(f"[DDP INIT] PID={pid} RANK={os.environ.get('RANK')} LOCAL_RANK={os.environ.get('LOCAL_RANK')} WORLD_SIZE={os.environ.get('WORLD_SIZE')} CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')} torch.cuda.device_count()={torch.cuda.device_count()}", flush=True)
 
+  os.environ["NCCL_TIMEOUT"] = "0"  # Disable timeout
+  os.environ["NCCL_BLOCKING_WAIT"] = "1"  # Use blocking wait
   # Make sure we have a valid config that inherits all the keys defined in the base config.
   if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
       rank = int(os.environ["RANK"])
@@ -184,7 +212,7 @@ def main(_):
     utils.setup_experiment(exp_dir, config, FLAGS.resume)
     
     if FLAGS.wandb:
-      wandb.init(project="LearnedRewardTests", group="Ego-EgoSubtask2Curriculum10M-Video", name="Ego-EgoSubtask2Curriculum10M-Video", mode="online")
+      wandb.init(project="LearnedReward6Subtask", group="Allocentric_Resnet50_6Subtask_30M", name="Allocentric_Resnet50_6Subtask_30M", mode="online")
       wandb.config.update(FLAGS)
       wandb.run.log_code(".")
       wandb.config.update(config.to_dict(), allow_val_change=True)
@@ -331,9 +359,7 @@ def main(_):
           print(f"[MEMORY] PID={pid} RANK={rank} Could not get CPU memory: {e}", flush=True)
       
       env.index_seed_step = i
-      env.unwrapped.stage_completed = [True, False, False]
-      env.unwrapped.actual_goal_stage = 1
-      env._subtask = 1
+      activated_subtask_experiment = False
     #   env._subtask = 1 # Reset subtask to 0 at the beginning of each step.
             
       # Subtask Exploration while in the beginning of the training.   
@@ -386,7 +412,7 @@ def main(_):
       #   else:
       #       env._subtask = 0
       
-      # # CURRICULUM
+      # # # CURRICULUM
       # if i == 30_000:
       #   activated_subtask_experiment = True
           
@@ -396,12 +422,12 @@ def main(_):
       #       # print("Setting stage 2")
       #       env.unwrapped.stage_completed = [True, True, False]
       #       env.unwrapped.actual_goal_stage = 2
-      #       env._subtask = 2
+      #       env._subtask = 4
       #   elif i >= 530_000 and i < 1_030_000:
       #       # print("Setting stage 1")
       #       env.unwrapped.stage_completed = [True, False, False]
       #       env.unwrapped.actual_goal_stage = 1
-      #       env._subtask = 1
+      #       env._subtask = 2
       #   elif i >= 1_030_000 and i < 1_530_000:
       #       # print("Setting stage 0")
       #       env.unwrapped.stage_completed = [False, False, False]
@@ -588,11 +614,11 @@ def main(_):
               
       if i >= config.num_seed_steps:
         # print(f"[DDP TRAIN] PID={pid} RANK={rank} DEVICE={device} Training policy at step {i}", flush=True)
-        try:
-           print(f"TRAINING- Step:{i}, "
-                  f"Subtask: {env._subtask}, RobotPosition:{env.unwrapped._robot.body.position} ")
-        except Exception as e:
-            print(f"Could not get block positions: {e}")
+        # try:
+        #    print(f"TRAINING- Step:{i}, "
+        #           f"Subtask: {env._subtask}, RobotPosition:{env.unwrapped._robot.body.position} ")
+        # except Exception as e:
+        #     print(f"Could not get block positions: {e}")
         policy.train()
         train_info = policy.module.update(buffer, i)
 
@@ -635,8 +661,14 @@ def main(_):
             }, step=i)
         logger.flush()
         
-      if world_size > 1:
-          dist.barrier()
+        if world_size > 1:
+            try:
+                # Short timeout for quick sync if possible
+                dist.barrier(timeout=datetime.timedelta(seconds=10))
+            except Exception:
+                # If timeout occurs, continue anyway
+                logging.warning(f"Rank {rank} barrier timeout during eval - continuing")
+                pass
 
       if (i + 1) % config.checkpoint_frequency == 0 and rank == 0:
         print(f"[DDP CHECKPOINT] PID={pid} RANK={rank} Saving checkpoint at step {i}", flush=True)

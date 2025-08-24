@@ -24,7 +24,10 @@ from absl import logging
 from configs.constants import XMAGICAL_EMBODIMENT_TO_ENV_NAME
 from torchkit.experiment import string_from_kwargs
 from torchkit.experiment import unique_id
+import torch.multiprocessing as mp
+import torch.distributed as dist
 import yaml
+import torch
 
 import os
 
@@ -37,6 +40,28 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string("pretrained_path", None, "Path to pretraining experiment.")
 flags.DEFINE_list("seeds", [0, 5], "List specifying the range of seeds to run.")
 flags.DEFINE_string("name_test", "xmagical", "Name of the test to run.")
+flags.DEFINE_string("port_number", "20500", "Port number for distributed training.")
+
+def run_seed(seed, kwargs, world_size, env_name, experiment_name):
+    """Run a single seed distributed across GPUs."""
+    # Launch torchrun for this seed
+    port = int(FLAGS.port_number) + (seed * 10)  # Unique port for each seed
+    cmd = [
+        "torchrun",
+        f"--nproc_per_node={world_size}",
+        "--rdzv_backend=c10d",
+        f"--rdzv_endpoint=localhost:{port}",
+        "--max-restarts", "0",
+        "train_policy_multi.py",
+        "--experiment_name", f"{experiment_name}_seed{seed}",
+        "--env_name", env_name,
+        "--config", f"configs/xmagical/rl/env_reward.py:{kwargs['embodiment']}",
+        "--config.reward_wrapper.pretrained_path", FLAGS.pretrained_path,
+        "--config.reward_wrapper.type", "holdr",
+        "--seed", str(seed),
+        "--wandb"
+    ]
+    return subprocess.Popen(cmd)
 
 
 def main(_):
@@ -74,20 +99,18 @@ def main(_):
         uid=deterministic_uid,  # Use deterministic UID instead of random
     )
   logging.info("Experiment name: %s", experiment_name)
+  
+  world_size = torch.cuda.device_count()
+  seeds = range(0, int(FLAGS.seeds[0]))
+  processes = []
 
-  # Execute the training with DDP
-  seed = int(FLAGS.seeds[0])
-  sys.argv = [
-      "train_policy_multi.py",
-      "--experiment_name", experiment_name,
-      "--env_name", f"{env_name}",
-      "--config", f"configs/xmagical/rl/env_reward.py:{kwargs['embodiment']}",
-      "--config.reward_wrapper.pretrained_path", f"{FLAGS.pretrained_path}",
-      "--config.reward_wrapper.type", f"{reward_type}",
-      "--seed", f"{seed}",
-      "--wandb", f"{True}",
-  ]
-  absl_app.run(train_policy_multi.main)
+  for seed in seeds:
+        p = run_seed(seed, kwargs, world_size, env_name, experiment_name)
+        processes.append(p)
+
+    # Wait for all seeds to complete
+  for p in processes:
+      p.wait()
   # for seed in range(*list(map(int, FLAGS.seeds))):
   #   procs.append(
   #       subprocess.Popen([  # pylint: disable=consider-using-with

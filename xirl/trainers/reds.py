@@ -17,8 +17,9 @@ class REDSRewardTrainer(Trainer):
         self.lambda_epic = getattr(reds_cfg, "lambda_epic", 1.0)
         self.epic_eps = getattr(reds_cfg, "epic_eps", 5e-2)
         self.lambda_epic_reg = getattr(reds_cfg, "lambda_epic_reg", 1.0)
+        self.supcon_temperature = getattr(reds_cfg, "supcon_temperature", 0.1)
         
-        
+
     def train_one_iter(self, batch):
         """Single forward + backward pass of the model.
 
@@ -42,7 +43,7 @@ class REDSRewardTrainer(Trainer):
         # out_dict = self._model(frames)
 
         # Compute losses.
-        loss, epic_loss, supcon_loss = self.compute_loss(video_embs, text_embs, reward, gt_rewards)
+        loss, epic_loss, supcon_loss, reg_loss = self.compute_loss(video_embs, text_embs, reward, gt_rewards)
         # aux_loss = self.compute_auxiliary_loss(out, batch)
         # loss = self.compute_loss(out_dict["embs"], batch)
         # aux_loss = self.compute_auxiliary_loss(out_dict, batch)
@@ -101,7 +102,7 @@ class REDSRewardTrainer(Trainer):
             
             reward, video_embs, text_embs = self._model(frames, texts, video_name)
             # out_dict = self._model(frames)
-            loss, epic_loss, supcon_loss = self.compute_loss(video_embs, text_embs, reward, gt_rewards)
+            loss, epic_loss, supcon_loss, reg_loss = self.compute_loss(video_embs, text_embs, reward, gt_rewards)
             val_base_loss += loss
             # val_base_loss += self.compute_loss(out_dict["embs"], batch)
             # val_aux_loss += self.compute_auxiliary_loss(out_dict, batch)
@@ -136,10 +137,11 @@ class REDSRewardTrainer(Trainer):
         # Compute losses
         epic_loss = self._compute_epic_loss(reward, gt_rewards)
         supcon_loss = self._compute_supcon_loss(video_embs, text_embs)
+        reg_loss = self._compute_progressive_regularization(reward, gt_rewards)
 
         # Combine losses
-        loss = self.lambda_epic * epic_loss + self.lambda_supcon * supcon_loss
-        return loss, epic_loss, supcon_loss
+        loss = self.lambda_epic * epic_loss + self.lambda_supcon * supcon_loss + self.lambda_epic_reg * reg_loss
+        return loss, epic_loss, supcon_loss, reg_loss
 
     def extract_score(self, video_features, text_features):
         return self._model.predict_reward(video_features, text_features)
@@ -178,18 +180,36 @@ class REDSRewardTrainer(Trainer):
             pred_i = pred_i[:min_len]
             gt_i = gt_i[:min_len]
             
-            # Canonical set: all other trajectories concatenated
-            pred_canon = torch.cat([pred_rewards[j].view(-1)[:min_len] for j in range(batch_size) if j != i])
-            gt_canon = torch.cat([gt_rewards[j].view(-1)[:min_len] for j in range(batch_size) if j != i])
+            # ✅ IMPROVED: Better canonical set construction
+            if batch_size > 1:
+                # Canonical set: all other trajectories
+                pred_canon_list = []
+                gt_canon_list = []
+                
+                for j in range(batch_size):
+                    if j != i:
+                        pred_j = pred_rewards[j].view(-1)[:min_len]
+                        gt_j = gt_rewards[j].view(-1)[:min_len]
+                        pred_canon_list.append(pred_j)
+                        gt_canon_list.append(gt_j)
+                
+                pred_canon = torch.cat(pred_canon_list)
+                gt_canon = torch.cat(gt_canon_list)
+                
+                # Center by canonical mean
+                pred_centered = pred_i - pred_canon.mean()
+                gt_centered = gt_i - gt_canon.mean()
+            else:
+                # Single trajectory case: center by own mean
+                pred_centered = pred_i - pred_i.mean()
+                gt_centered = gt_i - gt_i.mean()
             
-            # Center by canonical mean
-            pred_centered = pred_i - pred_canon.mean()
-            gt_centered = gt_i - gt_canon.mean()
-            
+            # Compute Pearson distance
             loss = self.compute_pearson_distance(pred_centered, gt_centered)
             losses.append(loss)
+        
         return torch.stack(losses).mean()
-
+            
     
     def supervised_contrastive_loss(self, features, labels, temperature=0.1):
         """
@@ -201,38 +221,56 @@ class REDSRewardTrainer(Trainer):
             Scalar loss
         """
         device = features.device
+        batch_size = features.shape[0]
+        
+        # Normalize features
         features = F.normalize(features, dim=1)
+        
+        # Compute similarity matrix
         similarity_matrix = torch.matmul(features, features.T) / temperature  # (2B, 2B)
+        
+        # Create mask for positive pairs
         labels = labels.contiguous().view(-1, 1)
         mask = torch.eq(labels, labels.T).float().to(device)  # (2B, 2B)
-
+        
         # Remove self-comparisons
-        logits_mask = torch.ones_like(mask) - torch.eye(mask.shape[0], device=device)
+        logits_mask = torch.ones_like(mask) - torch.eye(batch_size, device=device)
         mask = mask * logits_mask
-
-        # Numerator: exp(sim) for positive pairs
+        
+        # For each anchor, compute log-probability of positive pairs
         exp_logits = torch.exp(similarity_matrix) * logits_mask
-
-        # Log prob for each anchor
-        log_prob = similarity_matrix - torch.log(exp_logits.sum(dim=1, keepdim=True) + 1e-12)
-
-        # Only keep positives
+        log_prob = similarity_matrix - torch.log(exp_logits.sum(dim=1, keepdim=True) + 1e-8)
+        
+        # Average over positive pairs for each anchor
         mask_pos_pairs = mask.sum(dim=1)
+        # Avoid division by zero
         mask_pos_pairs = torch.where(mask_pos_pairs < 1e-6, torch.ones_like(mask_pos_pairs), mask_pos_pairs)
+        
         mean_log_prob_pos = (mask * log_prob).sum(dim=1) / mask_pos_pairs
-
-        loss = -mean_log_prob_pos
-        loss = loss.mean()
+        
+        # Final loss (negative log-likelihood)
+        loss = -mean_log_prob_pos.mean()
         return loss
 
     def _compute_supcon_loss(self, video_embs, text_embs):
         # video_embs, text_embs: lists of (T, D)
+        batch_size = len(video_embs)
+        
+        # Use last timestep (your approach was correct)
         video_embs_last = torch.stack([v[-1] for v in video_embs])  # (B, D)
         text_embs_last = torch.stack([t[-1] for t in text_embs])    # (B, D)
+        
+        # Each video-text pair should have the same label
+        labels = torch.arange(batch_size, device=video_embs_last.device)
+        
+        # Concatenate features: [video_features, text_features]
         features = torch.cat([video_embs_last, text_embs_last], dim=0)  # (2B, D)
-        labels = torch.arange(len(video_embs_last), device=video_embs_last.device)
+    
+        # This ensures video[i] and text[i] are considered positive pairs
         labels = torch.cat([labels, labels], dim=0)  # (2B,)
-        loss = self.supervised_contrastive_loss(features, labels, temperature=self.temperature)
+        
+        # Apply supervised contrastive loss
+        loss = self.supervised_contrastive_loss(features, labels, self.supcon_temperature)
         return loss
     
     @staticmethod
@@ -250,6 +288,40 @@ class REDSRewardTrainer(Trainer):
         corr = torch.clamp(corr, max=1.0)
         return torch.sqrt(0.5 * (1 - corr))
     
+    def _compute_progressive_regularization(self, pred_rewards, gt_rewards):
+        batch_size = len(pred_rewards)
+        reg_losses = []
+        
+        for i in range(batch_size):
+            pred_i = pred_rewards[i].view(-1)  # (T,)
+            gt_i = gt_rewards[i].view(-1)      # (T,)
+            
+            # Align lengths
+            min_len = min(pred_i.size(0), gt_i.size(0))
+            if min_len <= 1:
+                continue
+                
+            pred_i = pred_i[:min_len]
+            gt_i = gt_i[:min_len]
+            
+            # ✅ Progressive regularization: R(s_{t+1}) >= R(s_t) - epsilon
+            # This encourages monotonic increase in rewards over time
+            curr_rewards = pred_i[:-1]  # R(s_t)
+            next_rewards = pred_i[1:]   # R(s_{t+1})
+            
+            # Loss for violations: max(0, epsilon - (R_{t+1} - R_t))
+            violations = torch.maximum(
+                torch.tensor(0.0, device=pred_i.device),
+                self.epic_eps - (next_rewards - curr_rewards)
+            )
+            
+            reg_loss_i = violations.sum()
+            reg_losses.append(reg_loss_i)
+        if len(reg_losses) > 0:
+            return torch.stack(reg_losses).mean()
+        else:
+            return torch.tensor(0.0, device=pred_rewards[0].device)
+
     
     # def cos_sim(x1, x2):
     #     normed_x1 = x1 / torch.norm(x1, dim=-1, keepdim=True)

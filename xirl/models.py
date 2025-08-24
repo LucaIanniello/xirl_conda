@@ -406,64 +406,6 @@ class Bottleneck(nn.Module):
         out = self.relu(out)
         return out
 
-
-class ResNet50Net(nn.Module):
-    def __init__(self, num_classes: Optional[int] = None):
-        super().__init__()
-        self.in_planes = 64
-        self.num_classes = num_classes
-        print("ResNet50 initialized")
-
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
-        self.bn1 = nn.BatchNorm2d(64)
-        self.relu = nn.ReLU(inplace=True)
-        self.maxpool = nn.MaxPool2d(3, stride=2, padding=1)
-
-        self.layer1 = self._make_layer(64, 3)
-        self.layer2 = self._make_layer(128, 4, stride=2)
-        self.layer3 = self._make_layer(256, 6, stride=2)
-        self.layer4 = self._make_layer(512, 3, stride=2)
-
-        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.pre_logits = nn.Identity()
-        if num_classes is not None:
-            self.fc = nn.Linear(512 * Bottleneck.expansion, num_classes)
-
-    def _make_layer(self, planes, blocks, stride=1):
-        downsample = None
-        if stride != 1 or self.in_planes != planes * Bottleneck.expansion:
-            downsample = nn.Sequential(
-                nn.Conv2d(self.in_planes, planes * Bottleneck.expansion,
-                          kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(planes * Bottleneck.expansion),
-            )
-
-        layers = [Bottleneck(self.in_planes, planes, stride, downsample, zero_init_bn=True)]
-        self.in_planes = planes * Bottleneck.expansion
-        for _ in range(1, blocks):
-            layers.append(Bottleneck(self.in_planes, planes))
-
-        return nn.Sequential(*layers)
-
-    def forward(self, x) -> Dict[str, torch.Tensor]:
-        x = self.relu(self.bn1(self.conv1(x)))
-        x = self.maxpool(x)
-
-        features = {}
-        x = self.layer1(x); features["stage_1"] = x
-        x = self.layer2(x); features["stage_2"] = x
-        x = self.layer3(x); features["stage_3"] = x
-        x = self.layer4(x); features["stage_4"] = x
-
-        if self.num_classes is not None:
-            x = self.avgpool(x)
-            x = torch.flatten(x, 1)
-            x = self.pre_logits(x)
-            x = self.fc(x)
-            return {"logits": x}
-        else:
-            return features
-
 class ResNet50(SelfSupervisedModel):
     def __init__(self, embedding_size, num_ctx_frames, normalize_embeddings, learnable_temp):
         super().__init__(
@@ -472,163 +414,193 @@ class ResNet50(SelfSupervisedModel):
             learnable_temp=learnable_temp,
         )
 
-        # Your exact custom ResNet50 — not modified
-        self.backbone = ResNet50Net(num_classes=None)
+        # Load pretrained ResNet50 with better initialization
+        resnet = models.resnet50(pretrained=True)
+        resnet.fc = nn.Identity()  # Remove final FC layer
+        self.backbone = resnet
 
-        # The final output of ResNet50's stage_4 has 2048 channels (512 * Bottleneck.expansion)
-        self.encoder = nn.Linear(2048, embedding_size)
+        # Improved projection head
+        self.encoder = nn.Sequential(
+            nn.Linear(2048, 1024),
+            nn.BatchNorm1d(1024),
+            nn.ReLU(inplace=True),
+            nn.Linear(1024, embedding_size)
+        )
 
+        # Better initialization
+        for m in self.encoder.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.BatchNorm1d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+    @torch.cuda.amp.autocast()
     def forward(self, x):
         batch_size, t, c, h, w = x.shape
-        x_flat = x.view((batch_size * t, c, h, w))
-
-        # Call your ResNet50, get feature dict
-        feat_dict = self.backbone(x_flat)
-
-        # Extract the deepest feature map
-        feats = feat_dict["stage_4"]  # shape: (B*T, 2048, H/32, W/32)
-
-        # Apply global average pooling to reduce spatial dims to 1x1
-        feats = F.adaptive_avg_pool2d(feats, (1, 1))  # shape: (B*T, 2048, 1, 1)
-
-        # Flatten to (B*T, 2048)
-        feats_flat = feats.view(feats.size(0), -1)
-
-        # Encode to embeddings
-        embs = self.encoder(feats_flat)
-
+        x_flat = x.view(-1, c, h, w).contiguous()
+        
+        chunk_size = 16 
+        feats_list = []
+        
+        for i in range(0, x_flat.size(0), chunk_size):
+            end_idx = min(i + chunk_size, x_flat.size(0))
+            x_chunk = x_flat[i:end_idx]
+            
+            with torch.cuda.amp.autocast():
+                feats = self.backbone(x_chunk)
+                feats = feats.view(feats.size(0), -1)
+                feats = self.encoder(feats)
+                feats_list.append(feats)
+                
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                
+        feats_flat = torch.cat(feats_list, dim=0)
+        
+        # Apply normalization and temperature scaling
         if self.normalize_embeddings:
-            embs = embs / (embs.norm(dim=-1, keepdim=True) + 1e-7)
+            feats_flat = F.normalize(feats_flat, p=2, dim=-1)
         if self.learnable_temp:
-            logit_scale = self.logit_scale.exp()
-            embs = logit_scale * embs
+            feats_flat = self.logit_scale.exp() * feats_flat
 
-        # Reshape back to (B, T, -1)
-        embs = embs.view((batch_size, t, -1))
+        # Reshape to batch format
+        embs = feats_flat.view((batch_size, t, -1))
         feats_flat = feats_flat.view((batch_size, t, -1))
 
-        return {
-        "frames": x_flat,
-        "feats": feats_flat,
-        "embs": embs,
-    }
+        return SelfSupervisedOutput(
+            frames=x,
+            feats=feats_flat,
+            embs=embs
+        )
         
+# class DINOv2HFLinearEncoderNet(SelfSupervisedModel):
+#     def __init__(self, embedding_size, model_name='dinov2_vitb14', *args, **kwargs):
+#         super().__init__(*args, **kwargs)
+        
+#         # Load official DINOv2 model (faster loading)
+#         self.backbone = torch.hub.load('facebookresearch/dinov2', model_name, pretrained=True)
+#         self.backbone.eval()
+        
+#         # Freeze backbone
+#         for param in self.backbone.parameters():
+#             param.requires_grad = False
+            
+#         # Get backbone dimension
+#         backbone_dims = {
+#             'dinov2_vits14': 384,
+#             'dinov2_vitb14': 768,
+#             'dinov2_vitl14': 1024,
+#             'dinov2_vitg14': 1536
+#         }
+#         backbone_dim = backbone_dims.get(model_name, 768)
+            
+#         self.encoder = nn.Linear(backbone_dim, embedding_size)
+        
+#     def forward(self, x: torch.Tensor) -> SelfSupervisedOutput:
+#         batch_size, t, c, h, w = x.shape
+#         x_flat = x.view((batch_size * t, c, h, w))
+        
+#         # Resize to 224x224 if needed
+#         if x_flat.shape[-1] != 224:
+#             x_flat = F.interpolate(x_flat, size=(224, 224), mode='bilinear', align_corners=False)
+        
+#         # Normalize to [0,1] range
+#         if x_flat.max() > 1.0:
+#             x_flat = x_flat / 255.0
+            
+#         with torch.no_grad():  # Since backbone is frozen
+#             feats = self.backbone(x_flat)  # Direct features
+        
+#         # Apply encoder
+#         embs = self.encoder(feats)
+#         if self.normalize_embeddings:
+#             embs = embs / (embs.norm(dim=-1, keepdim=True) + 1e-7)
+#         if self.learnable_temp:
+#             logit_scale = self.logit_scale.exp()
+#             embs = logit_scale * embs
+
+#         # Reshape
+#         embs = embs.view((batch_size, t, -1))
+#         feats = feats.view((batch_size, t, -1))
+        
+#         return SelfSupervisedOutput(frames=x, feats=feats, embs=embs)
+      
 class DINOv2HFLinearEncoderNet(SelfSupervisedModel):
-    """
-    Alternative DINOv2 implementation using Hugging Face Transformers.
-    
-    This provides more control over preprocessing and model configuration
-    but requires the transformers library.
-    
-    Args:
-        embedding_size (int): Size of the output embeddings
-        model_name (str): HuggingFace model name. Options:
-            - 'facebook/dinov2-small': ViT-Small (21M params, 384 dim)
-            - 'facebook/dinov2-base': ViT-Base (86M params, 768 dim) [DEFAULT]
-            - 'facebook/dinov2-large': ViT-Large (300M params, 1024 dim)
-            - 'facebook/dinov2-giant': ViT-Giant (1.1B params, 1536 dim)
-        freeze_backbone (bool): Whether to freeze DINOv2 backbone weights
-        *args, **kwargs: Arguments passed to SelfSupervisedModel
-    """
-    
     def __init__(
         self,
         embedding_size: int,
-        model_name: str = 'facebook/dinov2-base',
+        model_name: str = 'facebook/dinov2-large',
         freeze_backbone: bool = True,
         *args,
         **kwargs
     ):
         super().__init__(*args, **kwargs)
         
-        try:
-            from transformers import AutoImageProcessor, AutoModel
-        except ImportError:
-            raise ImportError("Please install transformers: pip install transformers")
+        from transformers import AutoImageProcessor, AutoModel
             
-        self.model_name = model_name
-        self.freeze_backbone = freeze_backbone
-        
-        # Load processor and model
         self.processor = AutoImageProcessor.from_pretrained(model_name)
         self.backbone = AutoModel.from_pretrained(model_name)
         
-        # Freeze backbone if specified
-        if self.freeze_backbone:
+        if freeze_backbone:
+            self.backbone.eval()
             for param in self.backbone.parameters():
                 param.requires_grad = False
                 
-        # Get backbone dimension
         self.backbone_dim = self.backbone.config.hidden_size
-        
-        # Linear encoder
         self.encoder = nn.Linear(self.backbone_dim, embedding_size)
         
-        # Initialize encoder weights
+        # Proper initialization
         nn.init.xavier_uniform_(self.encoder.weight)
         nn.init.zeros_(self.encoder.bias)
-        
-    def preprocess_images(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Preprocess images for DINOv2 (normalize to [0,1] if needed).
-        
-        Args:
-            x: Input tensor, either in [0,1] or [0,255] range
-            
-        Returns:
-            Preprocessed tensor in [0,1] range
-        """
-        # Check if images are in [0,255] range and normalize if needed
-        if x.max() > 1.0:
-            x = x / 255.0
-        return x
-        
+           
     def forward(self, x: torch.Tensor) -> SelfSupervisedOutput:
-        """
-        Forward pass through DINOv2 backbone and encoder.
-        
-        Args:
-            x: Video frames of shape (B, T, C, H, W)
-            
-        Returns:
-            SelfSupervisedOutput containing frames, features, and embeddings
-        """
         batch_size, t, c, h, w = x.shape
+        x_flat = x.view(-1, c, h, w)
+
+        # Process in chunks for memory efficiency
+        chunk_size = 4  # Smaller chunks for transformer
+        feats_list = []
         
-        # Flatten batch and time dimensions
-        x_flat = x.view((batch_size * t, c, h, w))
-        
-        # Preprocess images
-        x_flat = self.preprocess_images(x_flat)
-        
-        # Extract features using DINOv2
-        if self.freeze_backbone:
-            with torch.no_grad():
-                outputs = self.backbone(pixel_values=x_flat)
-                feats = outputs.last_hidden_state[:, 0]  # [CLS] token
-        else:
-            outputs = self.backbone(pixel_values=x_flat)
-            feats = outputs.last_hidden_state[:, 0]  # [CLS] token
+        for i in range(0, x_flat.size(0), chunk_size):
+            end_idx = min(i + chunk_size, x_flat.size(0))
+            x_chunk = x_flat[i:end_idx]
             
-        # Apply linear encoder
-        embs = self.encoder(feats)
+            # Proper preprocessing
+            inputs = self.processor(
+                images=x_chunk, 
+                return_tensors="pt",
+                do_resize=True,
+                do_center_crop=True,
+                size={"height": 224, "width": 224}
+            )
+            pixel_values = inputs.pixel_values.to(x_chunk.device)
+
+            # Extract features
+            with torch.set_grad_enabled(not self.backbone.training):
+                outputs = self.backbone(pixel_values=pixel_values)
+                feats = outputs.last_hidden_state[:, 0]  # Use CLS token
+                feats_list.append(feats)
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+        feats_flat = torch.cat(feats_list, dim=0)
         
-        # Apply normalization if specified
+        # Encode with proper normalization
+        embs = self.encoder(feats_flat)
         if self.normalize_embeddings:
-            embs = embs / (embs.norm(dim=-1, keepdim=True) + 1e-7)
-            
-        # Apply learnable temperature if specified
+            embs = F.normalize(embs, p=2, dim=-1)
         if self.learnable_temp:
-            logit_scale = self.logit_scale.exp()
-            embs = logit_scale * embs
-            
-        # Reshape back to (B, T, -1)
+            embs = self.logit_scale.exp() * embs
+
         embs = embs.view((batch_size, t, -1))
-        feats = feats.view((batch_size, t, -1))
+        feats_flat = feats_flat.view((batch_size, t, -1))
         
-        return SelfSupervisedOutput(frames=x, feats=feats, embs=embs)
-
-
+        return SelfSupervisedOutput(frames=x, feats=feats_flat, embs=embs)
+      
 class MLP_REDS(nn.Module):
     def __init__(
         self,
@@ -662,7 +634,7 @@ class MLP_REDS(nn.Module):
     def forward(self, x):
         return self.net(x)
       
-def load_clip_model(model_name="ViT-B/32", device="cuda" if torch.cuda.is_available() else "cpu"):
+def load_clip_model(model_name="ViT-B/16", device="cuda" if torch.cuda.is_available() else "cpu"):
     model, preprocess = clip.load(model_name, device=device)
     return model        
 
@@ -678,7 +650,7 @@ class REDSInferOutput:
         return REDSInferOutput(embs=embs)
     
 class REDSRewardModel(nn.Module):
-    def __init__(self, embedding_size, fusion="concat", gpt2_layers=2,  num_ctx_frames=None, normalize_embeddings=None, learnable_temp=None, device=None, **kwargs):
+    def __init__(self, embedding_size, fusion="concat", gpt2_layers=3,  num_ctx_frames=None, normalize_embeddings=None, learnable_temp=None, device=None, **kwargs):
         super().__init__()
         self.clip_model = load_clip_model()
         for param in self.clip_model.parameters():
@@ -686,9 +658,12 @@ class REDSRewardModel(nn.Module):
         self.device = device if device is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
         clip_img_dim = self.clip_model.visual.output_dim
         clip_txt_dim = self.clip_model.text_projection.shape[1]
+        self.img_proj = nn.Linear(clip_img_dim, embedding_size)  # 512 -> 32
+        self.text_residual_weight = nn.Parameter(torch.ones(1) * 4.0)
+        self.img_residual_weight = nn.Parameter(torch.ones(1) * 4.0)
 
-        self.img_proj = MLP_REDS([embedding_size], input_dim=clip_img_dim)
-        self.txt_proj = MLP_REDS([embedding_size], input_dim=clip_txt_dim)
+        self.img_proj = MLP_REDS([embedding_size * 2, embedding_size], input_dim=clip_img_dim)
+        self.txt_proj = MLP_REDS([embedding_size * 2, embedding_size], input_dim=clip_txt_dim)
 
         if fusion == "concat":
             self.fusion_type = "concat"
@@ -699,11 +674,11 @@ class REDSRewardModel(nn.Module):
         else:
             raise ValueError("Unknown fusion type")
 
-        #TO BE DEFINED
+        
         gpt2_config = GPT2Config(
             n_embd=fusion_dim,
             n_layer=gpt2_layers,
-            n_head=4,
+            n_head=8,
             n_positions=128,
             resid_pdrop=0.1,
             embd_pdrop=0.1,
@@ -715,7 +690,7 @@ class REDSRewardModel(nn.Module):
             activations=F.relu,
             activate_final=False,
             dropout_rate=None,
-            input_dim=embedding_size * 2,
+            input_dim=embedding_size ,
         )
 
     def encode_text(self, texts):
@@ -723,10 +698,16 @@ class REDSRewardModel(nn.Module):
       feats_txt_list = []
       for video in texts:
           tokens = clip.tokenize(video).to(self.device)  # (T, context_length)
-          feats_txt = self.clip_model.encode_text(tokens)  # (T, D)
-          feats_txt = feats_txt.float()
-          feats_txt = self.txt_proj(feats_txt)  # (T, D)
+          feats_txt = self.clip_model.encode_text(tokens).float()  # (T, D)          
+          # Residual blending
+          res = torch.sigmoid(self.text_residual_weight)
+          adapted = self.txt_proj(feats_txt)
+          feats_txt = res * feats_txt + (1 - res) * adapted
+            
+            # Ensure normalization (CRITICAL FIX)
+          feats_txt = F.normalize(feats_txt, dim=-1)
           feats_txt_list.append(feats_txt)
+
       # feats_txt_list: list of (T, D)
       return feats_txt_list
 
@@ -740,54 +721,112 @@ class REDSRewardModel(nn.Module):
           images_flat = images_flat.half()
       else:
           images_flat = images_flat.float()
-      feats_img = self.clip_model.visual(images_flat)
-      feats_img = feats_img.float()  # <-- ADD THIS LINE to ensure float32 for MLP
-      feats_img = self.img_proj(feats_img)
+      feats_img = self.clip_model.visual(images_flat).float()
+           
+      adapted = self.img_proj(feats_img)                              
+      res = torch.sigmoid(self.img_residual_weight)
+      
+      feats_img = res * feats_img + (1 - res) * adapted
+      
+      # Ensure normalization 
+      feats_img = F.normalize(feats_img, dim=-1)
       feats_img = feats_img.view(B, T, -1)
+
       # Temporal modeling over image features
-      feats_img_t = feats_img.transpose(0, 1)  # (T, B, D)
-      temporal_out = self.temporal_decoder(inputs_embeds=feats_img_t).last_hidden_state  # (T, B, D)
-      temporal_out = temporal_out.transpose(0, 1)  # (B, T, D)
-      return temporal_out
+      # feats_img_t = feats_img.transpose(0, 1)  # (T, B, D)
+      # temporal_out = self.temporal_decoder(inputs_embeds=feats_img_t).last_hidden_state  # (T, B, D)
+      # temporal_out = temporal_out.transpose(0, 1)  # (B, T, D)
+      
+      return feats_img
+    
+    def debug_sequence_length_mismatch(self, video_features, text_features):
+      mismatch_indices = []
+      for idx, (vid_feat, txt_feat) in enumerate(zip(video_features, text_features)):
+          print(f"Sample {idx}: video length {vid_feat.shape[0]}, text length {txt_feat.shape[0]}")
+          if vid_feat.shape[0] != txt_feat.shape[0]:
+              mismatch_indices.append(idx)
+      if mismatch_indices:
+          print(f"Mismatches found in samples: {mismatch_indices}")
+      else:
+          print("No mismatches found in video and text sequence lengths.")
+      return mismatch_indices
+
 
     def predict_reward(self, video_features, text_features):
-      # video_features: list of (T, D), text_features: list of (T, D) or (T, D)
-      rewards = []
-      for vid_feat, txt_feat in zip(video_features, text_features):
-          reward_input = torch.cat([vid_feat, txt_feat], dim=-1)  # (T, 2D)
-          reward = self.reward_predictor(reward_input)  # (T, 1)
-          rewards.append(reward)
-      return rewards  # list of (T, 1)
+        rewards = []
+        
+        for vid_feat, txt_feat in zip(video_features, text_features):
+          
+            combined_features = vid_feat + txt_feat
+            combined_features = combined_features.unsqueeze(0) # (1, T, D)
+            combined_features_t = combined_features.transpose(0, 1)  # (T, 1, D)
+            temporal_out = self.temporal_decoder(inputs_embeds=combined_features_t).last_hidden_state
+            temporal_out = temporal_out.transpose(0, 1)  # (B, T, D)
+            
+            temporal_out = temporal_out.squeeze(0)  # (T, D)
+            reward = self.reward_predictor(temporal_out)  # (min_len, 1)
+            rewards.append(reward.squeeze(-1))
+
+        return rewards
+
 
     def forward(self, images, texts, video_names=None):
+      B, T = images.shape[:2]
       video_feature = self.encode_video(images)
-      text_feature = self.encode_text(texts)
+      text_feature_list = self.encode_text(texts)
       # for idx, (v, t) in enumerate(zip(video_feature, text_feature)):
       #     if v.shape[0] != t.shape[0]:
       #         vid_name = video_names[idx] if video_names is not None else f"index {idx}"
       #         print(f"Frame/text mismatch for video: {vid_name} ({v.shape[0]} vs {t.shape[0]})")
       #         assert v.shape[0] == t.shape[0], f"Frame/text mismatch: {v.shape[0]} vs {t.shape[0]}"
-      reward = self.predict_reward(video_feature, text_feature)
-      return reward, video_feature, text_feature
+      
+      text_features = []
+      for txt_feat in text_feature_list:
+            if txt_feat.shape[0] < T:
+                # Pad with last token if text is shorter
+                padding = txt_feat[-1:].expand(T - txt_feat.shape[0], -1)
+                txt_feat = torch.cat([txt_feat, padding], dim=0)
+            elif txt_feat.shape[0] > T:
+                # Truncate if text is longer
+                txt_feat = txt_feat[:T]
+            text_features.append(txt_feat)
+        
+      text_features = torch.stack(text_features, dim=0)  
+      
+            
+      reward = self.predict_reward(video_feature, text_features)
+      return reward, video_feature, text_features
     
-    
-
+  
     @torch.no_grad()
     def infer(self, images, texts=None, video_names=None):
-        """
-        Inference method for downstream evaluation.
-        Args:
-            images: (B, T, C, H, W) tensor
-            texts: optional, list of list of strings
-            video_names: optional, list of video names
-        Returns:
-            REDSInferOutput with embs: (T, D) numpy array for batch size 1
-        """
+        
         self.eval()
-        video_embs = self.encode_video(images)  # (B, T, D) tensor
-        # If batch size is 1, squeeze the batch dimension
-        if video_embs.shape[0] == 1:
-            embs = video_embs[0]  # (T, D)
+        if texts is None:
+            T = images.shape[1]
+            texts = [["move block"] * T]
+        # Forward pass
+        rewards, video_features, text_features = self.forward(images, texts, video_names)
+        
+        # Get the temporal embeddings (after combining and temporal modeling)
+        B, T = images.shape[:2]
+        
+        # Apply the same process as in predict_reward to get final embeddings
+        final_embeddings = []
+        
+        for vid_feat, txt_feat in zip(video_features, text_features):
+            combined_features = vid_feat + txt_feat
+            combined_features = combined_features.unsqueeze(0)  # Add batch dim
+            combined_features_t = combined_features.transpose(0, 1)
+            temporal_out = self.temporal_decoder(inputs_embeds=combined_features_t).last_hidden_state
+            temporal_out = temporal_out.transpose(0, 1).squeeze(0)  # (T, D)
+            final_embeddings.append(temporal_out)
+        
+        # Return embeddings for batch size 1
+        if len(final_embeddings) == 1:
+            embs = final_embeddings[0]  # (T, D)
         else:
-            embs = video_embs  # (B, T, D)
+            embs = torch.stack(final_embeddings, dim=0)  # (B, T, D)
+        
         return REDSInferOutput(embs=embs.cpu().detach().numpy())
+        

@@ -26,8 +26,8 @@ def get_config():
     config.algorithm = "tcc"
     
     # Training configuration
-    config.optim.train_max_iters = 6_000  # Can be adjusted based on your needs
-    config.optim.learning_rate = 1e-4      # DINOv2 typically uses lower learning rates
+    config.optim.train_max_iters = 3_000  # Can be adjusted based on your needs
+    config.optim.learning_rate = 5e-5      # DINOv2 typically uses lower learning rates
     config.optim.weight_decay = 0.04       # DINOv2 recommended weight decay
     config.optim.warmup_steps = 1000       # Warmup steps for stable training
     
@@ -40,8 +40,8 @@ def get_config():
     config.model.model_type = "dinov2"
     config.model.dinov2_variant = "dinov2_vitb14"  # Options: dinov2_vits14, dinov2_vitb14, dinov2_vitl14, dinov2_vitg14
     config.model.embedding_size = 32        # Larger embedding for DINOv2 features
-    config.model.normalize_embeddings = True       # DINOv2 benefits from normalized embeddings
-    config.model.learnable_temp = True             # Enable learnable temperature
+    config.model.normalize_embeddings = False       # DINOv2 benefits from normalized embeddings
+    config.model.learnable_temp = False        # Enable learnable temperature
     config.model.freeze_backbone = True            # Freeze DINOv2 backbone for transfer learning
     config.model.use_cls_token = True              # Use [CLS] token vs patch tokens
     config.model.trust_repo = True                 # Trust PyTorch Hub repository
@@ -61,8 +61,8 @@ def get_config():
     # Loss configuration - adapted for DINOv2 features
     config.loss.tcc.stochastic_matching = False
     config.loss.tcc.loss_type = "regression_mse"   # Can experiment with different loss types
-    config.loss.tcc.similarity_type = "cosine"     # Cosine similarity works well with normalized embeddings
-    config.loss.tcc.softmax_temperature = 0.07     # Lower temperature for DINOv2 features
+    config.loss.tcc.similarity_type = "l2"     # Cosine similarity works well with normalized embeddings
+    config.loss.tcc.softmax_temperature = 0.05     # Lower temperature for DINOv2 features
     
     # DINOv2 specific loss configurations (if implementing DINOv2 training)
     # config.loss.dinov2 = {}

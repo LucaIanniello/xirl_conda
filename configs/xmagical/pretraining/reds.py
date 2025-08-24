@@ -14,8 +14,8 @@ def get_config():
     # Model settings
     config.model.model_type = "reds_model"  
     config.model.embedding_size = 512
-    config.model.fusion = "concat"
-    config.model.gpt2_layers = 2
+    config.model.fusion = "sum"
+    config.model.gpt2_layers = 3
     config.data.batch_size = 64
     # Loss settings for REDS
     config.loss.reds.lambda_epic = 1.0

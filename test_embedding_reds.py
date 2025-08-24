@@ -30,8 +30,7 @@ from xirl import common
 from xirl.models import SelfSupervisedModel
 import pdb
 import matplotlib.pyplot as plt
-from sac.wrappers import HOLDRLearnedVisualReward
-
+import json
 # pylint: disable=logging-fstring-interpolation
 
 FLAGS = flags.FLAGS
@@ -160,7 +159,7 @@ def main(_):
     model.to(device).eval()
     rews = []
     print(FLAGS.experiment_path)
-    text_phrases = ["There must be a red block in the green area",  "There must be a red block and a blue block in the green area" ,  "There must be a red block, a blue block and  a yellow block in the green areae"]
+    text_phrases = ["The robot picks the red block", "The robot push the red block in the green zone","The robot picks the blue block","The robot push the blue block in the green zone","The robot picks the yellow block", "The robot push the yellow block in the green zone","All the blocks are in the green zone in the correct order"]
     text_features = []
     for phrase in text_phrases:
     # Pass as a batch of 1 video, 1 phrase
@@ -174,6 +173,11 @@ def main(_):
     
     # Ensure all rewards are on CPU and are numpy scalars or floats
     rews = [r.detach().cpu().item() if isinstance(r, torch.Tensor) else float(r) for r in rews]
+    
+    reward_save_path = os.path.join("/home/liannello/xirl/experiment_results/6Subtask/6Subtask_Pretrain_results/Allocentric/", "reward.json")
+    with open(reward_save_path, "w") as f:
+        json.dump(rews, f)
+    print(f"Saved rewards to: {reward_save_path}")
     # Convert to numpy arrays for plotting
     cosine_similarities = np.array(cosine_similarities)  # Shape: (N_frames, 3)
     continuity_matrices = np.array(continuity_matrices)  # Shape: (N_frames, 3)
@@ -210,7 +214,7 @@ def main(_):
     plt.tight_layout()
 
     # Save the comprehensive plot
-    save_path = os.path.join("/home/lianniello/xirl_thesis/experiment_results/Allocentric/training", "Allo_Reds_NewText_Wrong.png")
+    save_path = os.path.join("/home/liannello/xirl/experiment_results/6Subtask/6Subtask_Pretrain_results/Allocentric/", "Allo_Reds_NewText_Wrong.png")
     plt.savefig(save_path, bbox_inches='tight', dpi=300)
     print(f"Saved comprehensive analysis plot to: {save_path}")
     plt.close()
@@ -229,7 +233,7 @@ def main(_):
     plt.grid(True)
 
     # Save the cosine similarity plot
-    cosine_save_path = os.path.join("/home/lianniello/xirl_thesis/experiment_results/Allocentric/training", "Allo_Reds_Cosine_Similarity_Correct.png")
+    cosine_save_path = os.path.join("/home/liannello/xirl/experiment_results/6Subtask/6Subtask_Pretrain_results/Allocentric/", "Ego_Reds_Cosine_Similarity_Correct.png")
     plt.savefig(cosine_save_path, bbox_inches='tight', dpi=300)
     print(f"Saved cosine similarity plot to: {cosine_save_path}")
     plt.close()
@@ -245,7 +249,7 @@ def main(_):
     plt.grid(True)
 
     # Save the continuity matrix plot
-    continuity_save_path = os.path.join("/home/lianniello/xirl_thesis/experiment_results/Allocentric/training", "Allo_Reds_Continuity_Matrix_Correct.png")
+    continuity_save_path = os.path.join("/home/liannello/xirl/experiment_results/6Subtask/6Subtask_Pretrain_results/Allocentric/", "Ego_Reds_Continuity_Matrix_Correct.png")
     plt.savefig(continuity_save_path, bbox_inches='tight', dpi=300)
     print(f"Saved continuity matrix plot to: {continuity_save_path}")
     plt.close()
