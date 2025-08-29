@@ -220,6 +220,19 @@ def main(_):
   with open(reward_save_path, "w") as f:
         json.dump(rews, f)
   print(f"Saved rewards to: {reward_save_path}")
+  
+  cosine_sim_dict = {
+      "Key": {
+          "Subtask_1": np.asarray(cosine_similarity_emb_subtask_1_vec).tolist(),
+          "Subtask_2": np.asarray(cosine_similarity_emb_subtask_2_vec).tolist(),
+          "Subtask_3": np.asarray(cosine_similarity_emb_subtask_3_vec).tolist()
+      }
+  }
+  
+  cosine_save_path = os.path.join("/home/liannello/xirl/experiment_results/6Subtask/6Subtask_Pretrain_results/Egocentric/", "cosine.json")
+  with open(cosine_save_path, "w") as f:
+        json.dump(cosine_sim_dict, f)
+  print(f"Saved rewards to: {cosine_save_path}")
   # Save reward plot
   plt.figure()
   plt.plot(rews)

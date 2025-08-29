@@ -238,6 +238,7 @@ class LearnedVisualReward(abc.ABC, gym.Wrapper):
       env,
       model,
       device,
+      index_seed_step = 0,
       res_hw = None,
   ):
     """Constructor.
@@ -283,6 +284,7 @@ class LearnedVisualReward(abc.ABC, gym.Wrapper):
     info["env_reward"] = env_reward
     pixels = self._render_obs()
     learned_reward = self._get_reward_from_image(pixels)
+    
     return obs, learned_reward, done, info
 
 
@@ -341,7 +343,9 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         subtask_hold_steps=1,
         intrinsic_scale=0.02,
         k_nearest=10,
-        max_memory=50_000,
+        max_memory=1_000,
+        coverage_grid_size=100,
+        coverage_threshold=0.1,
         **base_kwargs,
     ):
         super().__init__(**base_kwargs)
@@ -364,9 +368,82 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         self._k_nearest = k_nearest
         self._max_memory = max_memory
         self._embedding_memory = []
+        
+        # Coverage tracking attributes
+        self._coverage_grid_size = coverage_grid_size
+        self._coverage_threshold = coverage_threshold
+        self._embedding_dim = None  # Will be set when first embedding is seen
+        self._coverage_grid = None
+        self._visited_states = set()
+        self._state_visit_counts = {}
+        self._unique_states_visited = 0
+        self._total_steps = 0
+        
+        # Coverage metrics storage
+        self._coverage_history = []
+        self._novelty_history = []
+        self._subtask_coverage = {}
 
+    def _initialize_coverage_grid(self, embedding_dim):
+        """Initialize coverage tracking structures based on embedding dimension"""
+        self._embedding_dim = embedding_dim
+        # Create a discrete grid for coverage tracking
+        self._coverage_grid = np.zeros([self._coverage_grid_size] * min(embedding_dim, 3))
+        print(f"WRAPPER: Initialized coverage grid with shape {self._coverage_grid.shape}")
+
+    def _get_grid_coordinates(self, embedding):
+        """Convert embedding to grid coordinates for coverage tracking"""
+        if self._embedding_dim is None:
+            self._initialize_coverage_grid(len(embedding))
+        
+        # Normalize embedding to [0, 1] range (adjust based on your embedding statistics)
+        # You might want to track min/max values and normalize accordingly
+        normalized = (embedding - embedding.min()) / (embedding.max() - embedding.min() + 1e-8)
+        
+        # Map to grid coordinates
+        coords = (normalized * (self._coverage_grid_size - 1)).astype(int)
+        coords = np.clip(coords, 0, self._coverage_grid_size - 1)
+        
+        return tuple(coords[:min(self._embedding_dim, 3)])  # Limit to 3D for visualization
+
+    def _update_coverage_metrics(self, emb):
+        """Update various coverage metrics"""
+        self._total_steps += 1
+        
+        # Grid-based coverage
+        grid_coords = self._get_grid_coordinates(emb)
+        if np.any(self._coverage_grid[grid_coords] == 0):
+            self._coverage_grid[grid_coords] = 1
+            self._unique_states_visited += 1
+        
+        # Hash-based unique state counting (more precise)
+        # Hash-based unique state counting (more precise)
+        rounded_emb = np.round(emb.flatten(), decimals=3)
+        state_hash = hash(tuple(rounded_emb.tolist()))
+
+        if state_hash not in self._visited_states:
+            self._visited_states.add(state_hash)
+        
+        self._state_visit_counts[state_hash] = self._state_visit_counts.get(state_hash, 0) + 1
+        # Calculate current coverage metrics
+        grid_coverage = np.sum(self._coverage_grid > 0) / self._coverage_grid.size
+        unique_state_ratio = len(self._visited_states) / max(self._total_steps, 1)
+        
+        # Store metrics
+        self._coverage_history.append({
+            'step': self._total_steps,
+            'subtask': self._subtask,
+            'grid_coverage': grid_coverage,
+            'unique_states': len(self._visited_states),
+            'unique_ratio': unique_state_ratio,
+            'total_grid_cells': np.sum(self._coverage_grid > 0)
+        })
+        
     def _compute_intrinsic_reward(self, emb):
         # Maintain memory, FIFO queue
+        
+        self._update_coverage_metrics(emb)
+        
         if len(self._embedding_memory) >= self._max_memory:
             self._embedding_memory.pop(0)
         self._embedding_memory.append(emb.copy())
@@ -374,15 +451,75 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         # If not enough samples, return default intrinsic reward
         if len(self._embedding_memory) <= self._k_nearest:
             return 1.0  # Encourage strong exploration at the beginning
-
-        # k-NN novelty (Euclidean distance to k-th nearest neighbor)
-        dists = [np.linalg.norm(emb - mem) for mem in self._embedding_memory[:-1]]
-        kth = min(self._k_nearest, len(dists) - 1) 
-        kth_dist = np.partition(dists, kth)[kth]
+        else:
+            # Compute k-NN novelty (Euclidean distance to k-th nearest neighbor)
+            dists = [np.linalg.norm(emb - mem) for mem in self._embedding_memory[:-1]]
+            kth = min(self._k_nearest, len(dists) - 1)
+            kth_dist = np.partition(dists, kth)[kth]
+            
+            novelty_reward = np.log(kth_dist + 1e-8)
         # Higher distance means more novel states and so higher reward
-        return np.log(kth_dist + 1e-8)
+        return novelty_reward
 
-                
+    def get_coverage_stats(self):
+        """Get comprehensive coverage statistics"""
+        if not self._coverage_history:
+            return {}
+        
+        latest = self._coverage_history[-1]
+        
+        stats = {
+            'total_steps': self._total_steps,
+            'unique_states_visited': len(self._visited_states),
+            'grid_coverage_percentage': latest['grid_coverage'] * 100,
+            'unique_state_ratio': latest['unique_ratio'],
+            'current_subtask': self._subtask,
+            'average_novelty': np.mean([h['novelty_reward'] for h in self._novelty_history[-100:]]) if self._novelty_history else 0,
+        }
+        # Per-subtask statistics
+        subtask_stats = {}
+        for subtask in range(self._num_subtasks + 1):
+            subtask_coverage = [h for h in self._coverage_history if h['subtask'] == subtask]
+            if subtask_coverage:
+                subtask_stats[f'subtask_{subtask}_coverage'] = subtask_coverage[-1]['grid_coverage'] * 100
+                subtask_stats[f'subtask_{subtask}_unique_states'] = len([h for h in self._coverage_history if h['subtask'] == subtask and h['unique_states'] > 0])
+        
+        stats.update(subtask_stats)
+        return stats
+      
+    def save_coverage_data(self, filepath):
+        """Save coverage data for analysis"""
+        import json
+        import numpy as np
+
+        def _to_serializable(obj):
+            if isinstance(obj, (np.integer,)):
+                return int(obj)
+            elif isinstance(obj, (np.floating,)):
+                return float(obj)
+            elif isinstance(obj, (np.ndarray,)):
+                return obj.tolist()
+            return obj
+
+        def _clean_dict_list(dict_list):
+            return [{k: _to_serializable(v) for k, v in d.items()} for d in dict_list]
+
+        coverage_data = {
+            'coverage_history': _clean_dict_list(self._coverage_history),
+            'novelty_history': _clean_dict_list(self._novelty_history),
+            'stats': {k: _to_serializable(v) for k, v in self.get_coverage_stats().items()},
+            'parameters': {
+                'k_nearest': int(self._k_nearest),
+                'intrinsic_scale': float(self._intrinsic_scale),
+                'max_memory': int(self._max_memory),
+                'coverage_grid_size': int(self._coverage_grid_size),
+            }
+        }
+
+        with open(filepath, 'w') as f:
+            json.dump(coverage_data, f, indent=2)
+
+        
     def reset_state(self):
         print("WRAPPER: Resetting HOLDRLearnedVisualReward state.")
         # print("Resetting HOLDR wrapper.")
@@ -469,7 +606,7 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         
         if self._subtask >= self._num_subtasks:
             reward = self._subtask_cost * self._subtask
-            print(f"WRAPPER- Step:{self.index_seed_step}, reward: {reward}, subtask: {self._subtask}")
+            # print(f"WRAPPER- Step:{self.index_seed_step}, reward: {reward}, subtask: {self._subtask}")
         else:        
             goal_emb = self._subtask_means[self._subtask]
             dist = self._compute_embedding_distance(emb, goal_emb, self._subtask)
@@ -481,11 +618,28 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
             # Check if the subtask is completed
             self._check_subtask_completion(dist, reward)
         
-            print(f"WRAPPER- Step:{self.index_seed_step}, reward: {reward}, subtask: {self._subtask}. distance: {dist}")
+            # print(f"WRAPPER- Step:{self.index_seed_step}, reward: {reward}, subtask: {self._subtask}. distance: {dist}")
             
-        # intrinsic_bonus = self._compute_intrinsic_reward(emb)
-        # reward += self._intrinsic_scale * intrinsic_bonus
+        intrinsic_bonus = self._compute_intrinsic_reward(emb)
+        reward += self._intrinsic_scale * intrinsic_bonus
         return reward
+      
+    def step(self, action, rank):
+      obs, env_reward, done, info = self.env.step(action)
+      # We'll keep the original env reward in the info dict in case the user would
+      # like to use it in conjunction with the learned reward.
+      info["env_reward"] = env_reward
+      pixels = self._render_obs()
+      learned_reward = self._get_reward_from_image(pixels)
+      
+      if self.index_seed_step % 100 == 0: 
+          coverage_stats = self.get_coverage_stats()
+          info['coverage_stats'] = coverage_stats
+          # print(f"WRAPPER: Coverage stats at step {self.index_seed_step}: {coverage_stats}")
+          if rank == 0:
+            self.save_coverage_data('coverage_analysis.json')
+      
+      return obs, learned_reward, done, info
       
 class REDSLearnedVisualReward(LearnedVisualReward):
     """Replace the environment reward with the output of a REDS model."""
@@ -496,7 +650,7 @@ class REDSLearnedVisualReward(LearnedVisualReward):
     ):
         """Constructor."""
         super().__init__(**base_kwargs)
-        self.text_phrases = ["The robot moves the red block in the goal zone",  "The robot moves the blue block in the goal zone" ,  "The robot moves the yellow block in the goal zone"]
+        self.text_phrases = ["The robot picks the red block", "The robot push the red block in the green zone","The robot picks the blue block","The robot push the blue block in the green zone","The robot picks the yellow block", "The robot push the yellow block in the green zone","All the blocks are in the green zone in the correct order"]
         self.text_features = []
         for phrase in self.text_phrases:
           # Pass as a batch of 1 video, 1 phrase

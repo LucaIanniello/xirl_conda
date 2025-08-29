@@ -174,13 +174,30 @@ def main(_):
     # Ensure all rewards are on CPU and are numpy scalars or floats
     rews = [r.detach().cpu().item() if isinstance(r, torch.Tensor) else float(r) for r in rews]
     
-    reward_save_path = os.path.join("/home/liannello/xirl/experiment_results/6Subtask/6Subtask_Pretrain_results/Allocentric/", "reward.json")
+    reward_save_path = os.path.join("/home/liannello/xirl/experiment_results/6Subtask/6Subtask_Pretrain_results/Egocentric/", "reward.json")
     with open(reward_save_path, "w") as f:
         json.dump(rews, f)
     print(f"Saved rewards to: {reward_save_path}")
     # Convert to numpy arrays for plotting
     cosine_similarities = np.array(cosine_similarities)  # Shape: (N_frames, 3)
     continuity_matrices = np.array(continuity_matrices)  # Shape: (N_frames, 3)
+    
+    cosine_similarities_dict = {
+        "Key":{
+            "Subtask_1": cosine_similarities[:, 0].tolist(),
+            "Subtask_2": cosine_similarities[:, 1].tolist(),
+            "Subtask_3": cosine_similarities[:, 2].tolist(),
+            "Subtask_4": cosine_similarities[:, 3].tolist(),
+            "Subtask_5": cosine_similarities[:, 4].tolist(),
+            "Subtask_6": cosine_similarities[:, 5].tolist()
+        }
+    }
+    
+    cosine_save_path = os.path.join("/home/liannello/xirl/experiment_results/6Subtask/6Subtask_Pretrain_results/Egocentric/", "cosine.json")
+    with open(cosine_save_path, "w") as f:
+        json.dump(cosine_similarities_dict, f)
+    print(f"Saved rewards to: {cosine_save_path}")
+  
     
     # Create subplots for comprehensive comparison
     fig, axes = plt.subplots(2, 2, figsize=(15, 10))
@@ -214,7 +231,7 @@ def main(_):
     plt.tight_layout()
 
     # Save the comprehensive plot
-    save_path = os.path.join("/home/liannello/xirl/experiment_results/6Subtask/6Subtask_Pretrain_results/Allocentric/", "Allo_Reds_NewText_Wrong.png")
+    save_path = os.path.join("/home/liannello/xirl/experiment_results/6Subtask/6Subtask_Pretrain_results/Egocentric/", "Allo_Reds_NewText_Wrong.png")
     plt.savefig(save_path, bbox_inches='tight', dpi=300)
     print(f"Saved comprehensive analysis plot to: {save_path}")
     plt.close()
@@ -233,7 +250,7 @@ def main(_):
     plt.grid(True)
 
     # Save the cosine similarity plot
-    cosine_save_path = os.path.join("/home/liannello/xirl/experiment_results/6Subtask/6Subtask_Pretrain_results/Allocentric/", "Ego_Reds_Cosine_Similarity_Correct.png")
+    cosine_save_path = os.path.join("/home/liannello/xirl/experiment_results/6Subtask/6Subtask_Pretrain_results/Egocentric/", "Ego_Reds_Cosine_Similarity_Correct.png")
     plt.savefig(cosine_save_path, bbox_inches='tight', dpi=300)
     print(f"Saved cosine similarity plot to: {cosine_save_path}")
     plt.close()

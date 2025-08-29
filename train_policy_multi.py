@@ -86,7 +86,7 @@ def evaluate(policy, env, num_episodes, rank):
                 last_episode_actions.append(action_np.tolist())
                 
                 
-            observation, reward, done, info = env.step(action)
+            observation, reward, done, info = env.step(action, rank)
             episode_reward += reward
             
             # Capture reward for last episode only
@@ -186,7 +186,7 @@ def main(_):
       rank = int(os.environ["RANK"])
       world_size = int(os.environ["WORLD_SIZE"])
       local_rank = int(os.environ.get("LOCAL_RANK", 0))
-      dist.init_process_group(backend="nccl", init_method="env://")
+      dist.init_process_group(backend="nccl", init_method="env://",timeout=datetime.timedelta(seconds=900000))
       print(f"[DDP INIT] PID={pid} RANK={rank} LOCAL_RANK={local_rank} initializing device (torch.cuda.device_count()={torch.cuda.device_count()})", flush=True)
       torch.cuda.set_device(local_rank)
       device = torch.device(f"cuda:{local_rank}")
@@ -212,7 +212,7 @@ def main(_):
     utils.setup_experiment(exp_dir, config, FLAGS.resume)
     
     if FLAGS.wandb:
-      wandb.init(project="LearnedReward6Subtask", group="Allocentric_Resnet50_6Subtask_30M", name="Allocentric_Resnet50_6Subtask_30M", mode="online")
+      wandb.init(project="LearnedReward6Subtask", group="Ego_Xirl_Exp_6Subtask_20M_1k", name="Ego_Xirl_Exp_6Subtask_20M_1k", mode="online")
       wandb.config.update(FLAGS)
       wandb.run.log_code(".")
       wandb.config.update(config.to_dict(), allow_val_change=True)
@@ -473,7 +473,7 @@ def main(_):
       # Decide whether to record video for this episode (check at episode boundaries)
       if i % video_log_frequency == 0 and rank == 0 and not should_record_video:
           should_record_video = True
-          print(f"[VIDEO] Starting video recording at step {i}")
+          # print(f"[VIDEO] Starting video recording at step {i}")
 
       if i < config.num_seed_steps:
           action = env.action_space.sample()  
@@ -485,25 +485,33 @@ def main(_):
       if should_record_video and rank == 0:
           frame = env.render(mode="rgb_array")
           training_frames.append(frame)
+      # if world_size > 1:
+      #   dist.barrier()
 
-      next_observation, reward, done, info = env.step(action)
+      next_observation, reward, done, info = env.step(action, rank)
       episode_reward += reward
-
-      # Capture reward if recording
-      if should_record_video and rank == 0:
+      
+      if rank == 0: 
+        if FLAGS.wandb:
+          if 'coverage_stats' in info:
+            wandb.log({f"exploration/{k}": v for k, v in info['coverage_stats'].items()}, step=i)
+          
+          wandb.log({
+              "train/reward": reward,
+              "train/step": i,
+          }, step=i)
+        
+        if should_record_video:
           training_rewards.append(reward)
+      
+      # if world_size > 1:
+      #   dist.barrier()
 
       if not done or "TimeLimit.truncated" in info:
           mask = 1.0
       else:
           mask = 0.0
-
-      if rank == 0 and FLAGS.wandb:
-          wandb.log({
-              "train/reward": reward,
-              "train/step": i,
-          }, step=i)
-
+          
       # if not config.reward_wrapper.pretrained_path:
       #   # print("No reward wrapper specified. Using default reward.")
       #   print("Inserting into buffer without reward wrapper.")
@@ -572,6 +580,8 @@ def main(_):
             training_frames = []
             training_rewards = []
             should_record_video = False
+        if world_size > 1:
+          dist.barrier()
         
         observation, done = env.reset(), False
         
@@ -580,19 +590,19 @@ def main(_):
           # buffer.reset_state()
           env.reset_state()
         
-        try:
-            blocks = {
-                "red": next(block for block in env.unwrapped.__debris_shapes if block.color_name == env.unwrapped.ShapeColor.RED),
-                "blue": next(block for block in env.unwrapped.__debris_shapes if block.color_name == env.unwrapped.ShapeColor.BLUE),
-                "yellow": next(block for block in env.unwrapped.__debris_shapes if block.color_name == env.unwrapped.ShapeColor.YELLOW),
-            }
+        # try:
+        #     # blocks = {
+        #     #     "red": next(block for block in env.unwrapped.__debris_shapes if block.color_name == env.unwrapped.ShapeColor.RED),
+        #     #     "blue": next(block for block in env.unwrapped.__debris_shapes if block.color_name == env.unwrapped.ShapeColor.BLUE),
+        #     #     "yellow": next(block for block in env.unwrapped.__debris_shapes if block.color_name == env.unwrapped.ShapeColor.YELLOW),
+        #     # }
             
-            print(f"AFTER RESET - Step:{i}, BlockPositions: Red:{blocks['red'].shape_body.position}, " 
-                  f"Blue:{blocks['blue'].shape_body.position}, "
-                  f"Yellow:{blocks['yellow'].shape_body.position}, "
-                  f"Subtask: {env._subtask}, RobotPosition:{env.unwrapped._robot.body.position} ")
-        except Exception as e:
-            print(f"Could not get block positions: {e}")  
+        #     # print(f"AFTER RESET - Step:{i}, BlockPositions: Red:{blocks['red'].shape_body.position}, " 
+        #     #       f"Blue:{blocks['blue'].shape_body.position}, "
+        #     #       f"Yellow:{blocks['yellow'].shape_body.position}, "
+        #     #       f"Subtask: {env._subtask}, RobotPosition:{env.unwrapped._robot.body.position} ")
+        # except Exception as e:
+        #     print(f"Could not get block positions: {e}")  
         if rank == 0:
           for k, v in info["episode"].items():
             logger.log_scalar(v, info["total"]["timesteps"], k, "training")
@@ -607,8 +617,8 @@ def main(_):
                   "train_done/step": i,
               }, step=i)
           episode_reward = 0
-        if world_size > 1:
-          dist.barrier()
+        # if world_size > 1:
+        #   dist.barrier()
         
         episode_reward = 0
               
@@ -636,43 +646,41 @@ def main(_):
                 "train/step": i,
             }, step=i)
           logger.flush()
-        if world_size > 1:
-          dist.barrier()
+        # if world_size > 1:
+        #   dist.barrier()
 
       
-      if (i + 1) % config.eval_frequency == 0 and rank == 0:
+      if (i + 1) % config.eval_frequency == 0:
         eval_stats, episode_rewards = evaluate(policy, eval_env, config.num_eval_episodes, rank)
-        for k, v in eval_stats.items():
-          logger.log_scalar(
-              v,
-              info["total"]["timesteps"],
-              f"average_{k}s",
-              "evaluation",
-          )
-          if FLAGS.wandb:
-            wandb.log({
-                f"eval/{k}": v,
-                "train/step": i,
-            }, step=i)
-          if FLAGS.wandb:
-            wandb.log({
-                "eval/episode_reward": episode_rewards,
-                "train/step": i,
-            }, step=i)
-        logger.flush()
+        if rank == 0:
+          for k, v in eval_stats.items():
+            logger.log_scalar(
+                v,
+                info["total"]["timesteps"],
+                f"average_{k}s",
+                "evaluation",
+            )
+            if FLAGS.wandb:
+              wandb.log({
+                  f"eval/{k}": v,
+                  "train/step": i,
+              }, step=i)
+            if FLAGS.wandb:
+              wandb.log({
+                  "eval/episode_reward": episode_rewards,
+                  "train/step": i,
+              }, step=i)
+          logger.flush()
         
         if world_size > 1:
-            try:
-                # Short timeout for quick sync if possible
-                dist.barrier(timeout=datetime.timedelta(seconds=10))
-            except Exception:
-                # If timeout occurs, continue anyway
-                logging.warning(f"Rank {rank} barrier timeout during eval - continuing")
-                pass
+          dist.barrier()
 
       if (i + 1) % config.checkpoint_frequency == 0 and rank == 0:
         print(f"[DDP CHECKPOINT] PID={pid} RANK={rank} Saving checkpoint at step {i}", flush=True)
         checkpoint_manager.save(i)
+        
+      if world_size > 1:
+        dist.barrier()
 
   except KeyboardInterrupt:
     print(f"[DDP EXIT] PID={pid} RANK={rank} Caught keyboard interrupt. Saving before quitting.", flush=True)

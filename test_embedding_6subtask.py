@@ -94,7 +94,7 @@ def check_subtask_completion(dist, current_reward, subtask, subtask_solved_count
     prev_reward = 0.0
     # Logic mirrors the provided _check_subtask_completion
     if subtask == 0:
-        if dist > -0.014:
+        if dist > -0.03:
             subtask_solved_counter += 1
             if subtask_solved_counter >= subtask_hold_steps:
                 subtask = min(num_subtasks - 1, subtask + 1)
@@ -105,7 +105,7 @@ def check_subtask_completion(dist, current_reward, subtask, subtask_solved_count
             subtask_solved_counter = 0
     elif subtask == 1:
         # Hardcoded threshold for subtask 1, as in your example
-        if dist > -0.014:
+        if dist > -0.04:
             subtask_solved_counter += 1
             if subtask_solved_counter >= subtask_hold_steps:
                 subtask = min(num_subtasks - 1, subtask + 1)
@@ -116,7 +116,7 @@ def check_subtask_completion(dist, current_reward, subtask, subtask_solved_count
             subtask_solved_counter = 0
     elif subtask == 2:
         # Hardcoded threshold for subtask 2, as in your example
-        if dist > -0.015:
+        if dist > -0.03:
             subtask_solved_counter += 1
             if subtask_solved_counter >= subtask_hold_steps:
                 subtask = 3
@@ -127,7 +127,7 @@ def check_subtask_completion(dist, current_reward, subtask, subtask_solved_count
             subtask_solved_counter = 0
     elif subtask == 3:
         # Hardcoded threshold for subtask 3, as in your example
-        if dist > -0.02:
+        if dist > -0.03:
             subtask_solved_counter += 1
             if subtask_solved_counter >= subtask_hold_steps:
                 subtask = 4
@@ -138,7 +138,7 @@ def check_subtask_completion(dist, current_reward, subtask, subtask_solved_count
             subtask_solved_counter = 0
     elif subtask == 4:
         # Hardcoded threshold for subtask 4, as in your example
-        if dist > -0.017:
+        if dist > -0.03:
             subtask_solved_counter += 1
             if subtask_solved_counter >= subtask_hold_steps:
                 subtask = 5
@@ -150,7 +150,7 @@ def check_subtask_completion(dist, current_reward, subtask, subtask_solved_count
             
     elif subtask == 5:
         # Hardcoded threshold for subtask 5, as in your example
-        if dist > -0.02:
+        if dist > -0.05:
             subtask_solved_counter += 1
             if subtask_solved_counter >= subtask_hold_steps:
                 subtask = 6
@@ -263,10 +263,27 @@ def main(_):
     i += 1
       
       
-  reward_save_path = os.path.join("/home/liannello/xirl/experiment_results/6Subtask/6Subtask_Pretrain_results/Allocentric/", "reward.json")
+  reward_save_path = os.path.join("/home/liannello/xirl/experiment_results/6Subtask/6Subtask_Pretrain_results/Egocentric/", "reward.json")
   with open(reward_save_path, "w") as f:
         json.dump(rews, f)
   print(f"Saved rewards to: {reward_save_path}")
+  
+  cosine_sim_dict = {
+      "Key": {
+          "Subtask_1": np.asarray(cosine_similarity_emb_subtask_1_vec).tolist(),
+          "Subtask_2": np.asarray(cosine_similarity_emb_subtask_2_vec).tolist(),
+          "Subtask_3": np.asarray(cosine_similarity_emb_subtask_3_vec).tolist(),
+          "Subtask_4": np.asarray(cosine_similarity_emb_subtask_4_vec).tolist(),
+          "Subtask_5": np.asarray(cosine_similarity_emb_subtask_5_vec).tolist(),
+          "Subtask_6": np.asarray(cosine_similarity_emb_subtask_6_vec).tolist()
+      }
+  }
+  
+  cosine_save_path = os.path.join("/home/liannello/xirl/experiment_results/6Subtask/6Subtask_Pretrain_results/Egocentric/", "cosine.json")
+  with open(cosine_save_path, "w") as f:
+        json.dump(cosine_sim_dict, f)
+  print(f"Saved rewards to: {cosine_save_path}")
+  
   # Save reward plot
   plt.figure()
   plt.plot(rews)
@@ -287,13 +304,13 @@ def main(_):
   plt.ylabel("Cosine Similarity")
   plt.legend(loc="lower left")
   plt.grid(True)
-  cosine_save_path = os.path.join("/home/liannello/xirl/experiment_results/6Subtask/6Subtask_Pretrain_results/Allocentric/", "CosineSimilarity.png")
+  cosine_save_path = os.path.join("/home/liannello/xirl/experiment_results/6Subtask/6Subtask_Pretrain_results/Egocentric/", "CosineSimilarity.png")
   plt.savefig(cosine_save_path, bbox_inches='tight')
   print(f"Saved cosine similarity plot to: {cosine_save_path}")
   plt.close()
 
   # Save the plot instead of showing it
-  save_path = os.path.join("/home/liannello/xirl/experiment_results/6Subtask/6Subtask_Pretrain_results/Allocentric/", "ALLO_NEWDIST_TEST.png")
+  save_path = os.path.join("/home/liannello/xirl/experiment_results/6Subtask/6Subtask_Pretrain_results/Egocentric/", "ALLO_NEWDIST_TEST.png")
   plt.savefig(save_path, bbox_inches='tight')
   print(f"Saved reward plot to: {save_path}")
   plt.close()
