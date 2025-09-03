@@ -62,6 +62,7 @@ def evaluate(policy, env, num_episodes, rank):
     last_episode_frames = []
     last_episode_rewards = []
     last_episode_actions = []
+    exp_dir = os.path.dirname(os.path.dirname(env.save_dir))
     
     for i in range(num_episodes):
         observation, done = env.reset(), False
@@ -86,7 +87,7 @@ def evaluate(policy, env, num_episodes, rank):
                 last_episode_actions.append(action_np.tolist())
                 
                 
-            observation, reward, done, info = env.step(action, rank)
+            observation, reward, done, info = env.step(action, rank, exp_dir, flag="valid")
             episode_reward += reward
             
             # Capture reward for last episode only
@@ -101,7 +102,7 @@ def evaluate(policy, env, num_episodes, rank):
     
     if rank == 0:  # Only save on rank 0
         # Get experiment directory from env's save_dir
-        exp_dir = os.path.dirname(os.path.dirname(env.save_dir))
+        
         actions_file = os.path.join(exp_dir, "last_evaluation_actions.json")
         
         action_data = {
@@ -212,7 +213,7 @@ def main(_):
     utils.setup_experiment(exp_dir, config, FLAGS.resume)
     
     if FLAGS.wandb:
-      wandb.init(project="LearnedReward6Subtask", group="Ego_Xirl_Exp_6Subtask_20M_1k", name="Ego_Xirl_Exp_6Subtask_20M_1k", mode="online")
+      wandb.init(project="MultipleSeeds6Subtask", group="Ego_Xirl_Seed_1", name="Ego_Xirl_Seed_1", mode="online")
       wandb.config.update(FLAGS)
       wandb.run.log_code(".")
       wandb.config.update(config.to_dict(), allow_val_change=True)
@@ -488,12 +489,15 @@ def main(_):
       # if world_size > 1:
       #   dist.barrier()
 
-      next_observation, reward, done, info = env.step(action, rank)
+      next_observation, reward, done, info = env.step(action, rank, exp_dir, flag= "train")
       episode_reward += reward
       
       if rank == 0: 
         if FLAGS.wandb:
           if 'coverage_stats' in info:
+            # Debug print to see what's in coverage_stats
+            if i % 1000 == 0:  # Print every 1000 steps to avoid spam
+              print(f"Step {i}: Coverage stats: {info['coverage_stats']}")
             wandb.log({f"exploration/{k}": v for k, v in info['coverage_stats'].items()}, step=i)
           
           wandb.log({
@@ -650,10 +654,9 @@ def main(_):
         #   dist.barrier()
 
       
-      if (i + 1) % config.eval_frequency == 0:
+      if (i + 1) % config.eval_frequency == 0 and rank == 0:
         eval_stats, episode_rewards = evaluate(policy, eval_env, config.num_eval_episodes, rank)
-        if rank == 0:
-          for k, v in eval_stats.items():
+        for k, v in eval_stats.items():
             logger.log_scalar(
                 v,
                 info["total"]["timesteps"],
@@ -670,9 +673,9 @@ def main(_):
                   "eval/episode_reward": episode_rewards,
                   "train/step": i,
               }, step=i)
-          logger.flush()
+            logger.flush()
         
-        if world_size > 1:
+      if world_size > 1:
           dist.barrier()
 
       if (i + 1) % config.checkpoint_frequency == 0 and rank == 0:

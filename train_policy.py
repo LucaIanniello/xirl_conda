@@ -36,6 +36,9 @@ from tqdm.auto import tqdm
 import utils
 import wandb
 
+import os
+import json
+
 # pylint: disable=logging-fstring-interpolation
 
 FLAGS = flags.FLAGS
@@ -63,23 +66,97 @@ def evaluate(
   episode_rewards = []
   policy.eval()
   stats = collections.defaultdict(list)
-  for _ in range(num_episodes):
+  last_episode_frames = []
+  last_episode_rewards = []
+  last_episode_actions = []
+  exp_dir = os.path.dirname(os.path.dirname(env.save_dir))
+    
+  for i in range(num_episodes):
     observation, done = env.reset(), False
     if "holdr" in FLAGS.experiment_name:
       # Reset the buffer and environment state for holdr.
       env.reset_state()
     episode_reward = 0
     while not done:
-      action = policy.act(observation, sample=False)
-      observation, reward, done, info = env.step(action)
-      episode_reward += reward
+      # Capture frame for last episode only
+            if i == num_episodes - 1:
+                frame = env.render(mode="rgb_array")
+                last_episode_frames.append(frame)
+            
+            action = policy.module.act(observation, sample=False)
+            
+            if i == num_episodes - 1:
+                if isinstance(action, torch.Tensor):
+                    action_np = action.cpu().numpy()
+                else:
+                    action_np = action  # Already numpy array
+                    
+                last_episode_actions.append(action_np.tolist())
+                
+                
+            observation, reward, done, info = env.step(action, exp_dir=exp_dir, rank=0, flag="valid")
+            episode_reward += reward
+            
+            # Capture reward for last episode only
+            if i == num_episodes - 1:
+                last_episode_rewards.append(reward)
     for k, v in info["episode"].items():
       stats[k].append(v)
     if "eval_score" in info:
       stats["eval_score"].append(info["eval_score"])
     episode_rewards.append(episode_reward)
+    
+    actions_file = os.path.join(exp_dir, "last_evaluation_actions.json")
+        
+    action_data = {
+        "actions": last_episode_actions,
+        "total_reward": sum(last_episode_rewards),
+    }
+    
+    with open(actions_file, 'w') as f:
+        json.dump(action_data, f, indent=2)
+    
+    logging.info(f"Saved last evaluation actions to {actions_file}")
+    
+    # Log video and reward plot to wandb
+    if last_episode_frames and FLAGS.wandb:
+        # Convert frames to proper format (time, channel, height, width)
+        frames = np.array([frame.transpose(2, 0, 1) for frame in last_episode_frames])
+        wandb.log({
+            "eval/last_eval_video": wandb.Video(frames, fps=30, format="mp4"),
+            "eval/step": i  # Use current training step
+        })
+        
+        try:
+            import matplotlib.pyplot as plt
+            plt.figure(figsize=(10, 6))
+            plt.plot(last_episode_rewards)
+            plt.title("Reward Evolution - Last Evaluation Episode")
+            plt.xlabel("Step")
+            plt.ylabel("Reward")
+            plt.tight_layout()
+            wandb.log({
+                "eval/last_reward_plot": wandb.Image(plt),
+                "eval/step": i
+            })
+            plt.close()
+        except ImportError:
+            pass  # matplotlib not available
   for k, v in stats.items():
     stats[k] = np.mean(v)
+    
+  if FLAGS.wandb:
+        wandb.log({
+            "eval/mean_episode_reward": np.mean(episode_rewards),
+            "eval/episode_rewards": episode_rewards,
+            "eval/step": i,
+        })
+        if "eval_score" in stats:
+            wandb.log({
+                "eval/mean_eval_score": stats["eval_score"],
+                "eval/eval_scores": stats.get("eval_score", []),
+                "eval/step": i,
+            })
   return stats, episode_rewards
 
 
@@ -99,7 +176,7 @@ def main(_):
   utils.setup_experiment(exp_dir, config, FLAGS.resume)
   
   if FLAGS.wandb:
-    wandb.init(project="EnvRewardTests", group="6MillionsSingleGPU", name="6MillionsSingleGPU", mode="online")
+    wandb.init(project="MultipleSeeds6Subtask", group="Ego_3Subtask_Xirl_Seed_3", name="Ego_3Subtask_Xirl_Seed_3", mode="online")
     wandb.config.update(FLAGS)
     wandb.run.log_code(".")
     wandb.config.update(config.to_dict(), allow_val_change=True)
@@ -174,6 +251,11 @@ def main(_):
     start = checkpoint_manager.restore_or_initialize()
     observation, done = env.reset(), False
     episode_reward = 0
+    training_frames = []
+    training_rewards = []
+    video_log_frequency = config.eval_frequency * 2  # Log videos less frequently than evaluation
+    should_record_video = False
+    
     for i in tqdm(range(start, config.num_train_steps), initial=start):
       env.index_seed_steps = i
       # env._subtask = 1 # Reset subtask to 0 at the beginning of each step.
@@ -228,7 +310,8 @@ def main(_):
       #   else:
       #       env._subtask = 0
         
-            
+      if i % video_log_frequency == 0 and not should_record_video:
+          should_record_video = True
           
       if i < config.num_seed_steps:
         #Pretrain Subtask Exploration
@@ -237,8 +320,29 @@ def main(_):
       else:
         policy.eval()
         action = policy.act(observation, sample=True)
-      next_observation, reward, done, info = env.step(action)
+        
+      if should_record_video:
+          frame = env.render(mode="rgb_array")
+          training_frames.append(frame) 
+          
+      next_observation, reward, done, info = env.step(action, exp_dir = exp_dir, rank = 0, flag="train")
       episode_reward += reward
+      
+      if FLAGS.wandb:
+          if 'coverage_stats' in info:
+            # Debug print to see what's in coverage_stats
+            if i % 1000 == 0:  # Print every 1000 steps to avoid spam
+              print(f"Step {i}: Coverage stats: {info['coverage_stats']}")
+            wandb.log({f"exploration/{k}": v for k, v in info['coverage_stats'].items()}, step=i)
+          
+          wandb.log({
+              "train/reward": reward,
+              "train/step": i,
+          }, step=i)
+        
+      if should_record_video:
+          training_rewards.append(reward)
+          
       if not done or "TimeLimit.truncated" in info:
         mask = 1.0
       else:
@@ -250,25 +354,76 @@ def main(_):
         "train/step": i,
         }, step=i)
 
-      if not config.reward_wrapper.pretrained_path:
-        # print("No reward wrapper specified. Using default reward.")
-        buffer.insert(observation, action, reward, next_observation, mask)
-      else:
-        buffer.insert(
-            observation,
-            action,
-            reward,
-            next_observation,
-            mask,
-            env.render(mode="rgb_array"),
-        )
+      # if not config.reward_wrapper.pretrained_path:
+      #   # print("No reward wrapper specified. Using default reward.")
+      #   buffer.insert(observation, action, reward, next_observation, mask)
+      # else:
+      #   buffer.insert(
+      #       observation,
+      #       action,
+      #       reward,
+      #       next_observation,
+      #       mask,
+      #       env.render(mode="rgb_array"),
+      #   )
+      # observation = next_observation
+      
+      buffer.insert(observation, action, reward, next_observation, mask)
       observation = next_observation
 
       if done:
+        if should_record_video and training_frames  and FLAGS.wandb:
+            try:
+                # Convert frames to proper format
+                frames = np.array([frame.transpose(2, 0, 1) for frame in training_frames])
+                wandb.log({
+                    "train/training_video": wandb.Video(frames, fps=20, format="mp4"),
+                    "train/step": i
+                })
+                
+                # Plot reward evolution for this training episode
+                try:
+                    import matplotlib.pyplot as plt
+                    plt.figure(figsize=(12, 6))
+                    plt.plot(training_rewards)
+                    plt.title(f"Training Episode Reward Evolution - Step {i}")
+                    plt.xlabel("Episode Step")
+                    plt.ylabel("Reward")
+                    plt.grid(True, alpha=0.3)
+                    
+                    # Add some statistics
+                    total_reward = sum(training_rewards)
+                    avg_reward = np.mean(training_rewards)
+                    plt.axhline(y=avg_reward, color='r', linestyle='--', alpha=0.7, 
+                              label=f'Avg: {avg_reward:.3f}')
+                    plt.legend()
+                    plt.tight_layout()
+                    
+                    wandb.log({
+                        "train/training_reward_plot": wandb.Image(plt),
+                        "train/episode_total_reward": total_reward,
+                        "train/episode_avg_reward": avg_reward,
+                        "train/episode_length": len(training_rewards),
+                        "train/step": i
+                    })
+                    plt.close()
+                except ImportError:
+                    pass  # matplotlib not available
+                
+                print(f"[VIDEO LOG] Training video logged at step {i}, episode length: {len(training_frames)} frames, total reward: {sum(training_rewards):.3f}")
+                
+            except Exception as e:
+                print(f"[VIDEO LOG ERROR] Failed to log training video: {e}")
+            
+            # Reset for next recording
+            training_frames = []
+            training_rewards = []
+            should_record_video = False
+            
         observation, done = env.reset(), False
         if "holdr" in config.reward_wrapper.type:
           # print("Resetting buffer and environment state.")
-          buffer.reset_state()
+          # buffer.reset_state()
           env.reset_state()
 
         for k, v in info["episode"].items():
