@@ -83,7 +83,7 @@ def evaluate(
                 frame = env.render(mode="rgb_array")
                 last_episode_frames.append(frame)
             
-            action = policy.module.act(observation, sample=False)
+            action = policy.act(observation, sample=False)
             
             if i == num_episodes - 1:
                 if isinstance(action, torch.Tensor):
@@ -176,8 +176,12 @@ def main(_):
   utils.setup_experiment(exp_dir, config, FLAGS.resume)
   
   if FLAGS.wandb:
-    wandb.init(project="MultipleSeeds6Subtask", group="Ego_3Subtask_Xirl_Seed_3", name="Ego_3Subtask_Xirl_Seed_3", mode="online")
-    wandb.config.update(FLAGS)
+    if FLAGS.resume:
+        wandb_id = "k8lxe3hf"
+        wandb.init(project="MultipleSeeds6Subtask", group="Ego_6Subtask_Xirl_Seed_42", name="Ego_6Subtask_Xirl_Seed_42", id=wandb_id, mode="online", resume="must")
+    else:
+        wandb.init(project="MultipleSeeds6Subtask", group="Allo_1Subtask_Xirl_Seed_42", name="Allo_1Subtask_Xirl_Seed_42", mode="online")
+    wandb.config.update(FLAGS, allow_val_change=True)
     wandb.run.log_code(".")
     wandb.config.update(config.to_dict(), allow_val_change=True)
 
@@ -257,7 +261,7 @@ def main(_):
     should_record_video = False
     
     for i in tqdm(range(start, config.num_train_steps), initial=start):
-      env.index_seed_steps = i
+      env.index_seed_step = i
       # env._subtask = 1 # Reset subtask to 0 at the beginning of each step.
             
       # Subtask Exploration while in the beginning of the training.   

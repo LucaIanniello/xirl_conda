@@ -763,7 +763,7 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         else:
             self._subtask_solved_counter = 0
       elif self._subtask == 2:
-        if dist > -0.10:
+        if dist > -0.03:
             self._subtask_solved_counter += 1
             if self._subtask_solved_counter >= self._subtask_hold_steps:
                 self._subtask = self._subtask + 1
@@ -841,7 +841,7 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         pixels = self._render_obs()
         learned_reward = self._get_reward_from_image(pixels, flag)
         
-        if self.index_seed_step % 10000 == 0 and flag == "train":
+        if self.index_seed_step % 20000 == 0 and flag == "train":
             coverage_stats = self.get_coverage_stats()
             info['coverage_stats'] = coverage_stats
             if rank == 0:

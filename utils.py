@@ -224,12 +224,15 @@ def wrap_learned_reward(env, config, device):
     env = wrappers.DistanceToGoalLearnedVisualReward(**kwargs)
     
   elif config.reward_wrapper.type == "holdr":
-    kwargs["subtask_means"] = load_pickle(pretrained_path, "subtask_means.pkl")
+    all_means = load_pickle(pretrained_path, "subtask_means.pkl")
+    selected_means_2_4_6 = [all_means[i] for i in [5]]  # elements 2,4,6
+    kwargs["subtask_means"] = selected_means_2_4_6
     kwargs["distance_scale"] = load_pickle(pretrained_path,
                                            "distance_scale.pkl")
     env = wrappers.HOLDRLearnedVisualReward(**kwargs)
     
   elif config.reward_wrapper.type == "reds":
+    print("AAAAAAA")
     env = wrappers.REDSLearnedVisualReward(**kwargs)
 
   else:

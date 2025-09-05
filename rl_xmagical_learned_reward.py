@@ -63,6 +63,8 @@ def main(_):
       algo=kwargs["algo"],
       uid=unique_id(),
   )
+  
+  # experiment_name = "env_name=SweepToTop-Gripper-State-Allo-TestLayout-v0_reward=learned_reward_type=holdr_mode=same_algo=xirl_uid=26886688-5c1e-494d-8e16-5add44e43a7c"
   logging.info("Experiment name: %s", experiment_name)
 
   # Execute each seed in parallel.
@@ -83,11 +85,11 @@ def main(_):
             "--config.reward_wrapper.type",
             f"{reward_type}",
             "--seed",
-            f"{seed}",
+            f"{42}",
             "--device",
             f"{FLAGS.device}",
             "--wandb",
-            f"{FLAGS.wandb}",
+            f"{FLAGS.wandb}"
         ]))
 
   # Wait for each seed to terminate.
