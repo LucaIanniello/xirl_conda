@@ -359,16 +359,14 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
 
         # Subtask tracking
         self._subtask = 0
-        self._subtask_threshold = subtask_threshold
         self._subtask_cost = subtask_cost
         self._subtask_hold_steps = subtask_hold_steps
         self._subtask_solved_counter = 0
-        self._non_decreasing_reward = False
         
         self._intrinsic_scale = intrinsic_scale
         self._k_nearest = k_nearest
         self._max_memory = max_memory
-        self._embedding_memory = []
+        self._embedding_memory_per_subtask = defaultdict(list)
         
         # Coverage tracking attributes
         self._coverage_grid_size = coverage_grid_size
@@ -396,6 +394,9 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         
         self._visited_states_per_subtask = defaultdict(set)
         self._norm_fitted = False
+        
+        self.subtask_switch_step = 0
+        self.increase_intrinsic_scale_after_subtask = 0.2
 
     def _initialize_coverage_grid(self, embedding_dim):
         """Initialize coverage tracking structures based on embedding dimension"""
@@ -588,32 +589,32 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         })
         
     def _compute_intrinsic_reward(self, emb):
-               
-        if len(self._embedding_memory) >= self._max_memory:
-            self._embedding_memory.pop(0)
-        self._embedding_memory.append(emb.copy())
-        
-        # If not enough samples, return default intrinsic reward
-        if len(self._embedding_memory) <= self._k_nearest:
-            novelty_reward = 1.0  # Encourage strong exploration at the beginning
+        current_subtask = self._subtask
+        memory = self._embedding_memory_per_subtask[current_subtask]
+
+        if len(memory) >= self._max_memory:
+            memory.pop(0)
+        memory.append(emb.copy())
+
+        # If not enough samples yet → encourage exploration
+        if len(memory) <= self._k_nearest:
+            novelty_reward = 1.0
         else:
-            # Compute k-NN novelty (Euclidean distance to k-th nearest neighbor)
-            dists = [np.linalg.norm(emb - mem) for mem in self._embedding_memory[:-1]]
+            dists = [np.linalg.norm(emb - mem) for mem in memory[:-1]]
             kth = min(self._k_nearest, len(dists) - 1)
             kth_dist = np.partition(dists, kth)[kth]
-            
-            # Use a different novelty calculation that gives positive rewards for higher distances
-            novelty_reward = min(kth_dist, 10.0)  # Cap at 10 to prevent extreme values
-            
-        # Debug print for first few steps
-        if self._total_steps <= 10:
-            print(f"WRAPPER DEBUG Step {self._total_steps}: novelty_reward={novelty_reward:.4f}")
-            
-        self._novelty_history.append({'step': self._total_steps,
-                          'subtask': self._subtask,
-                          'novelty_reward': float(novelty_reward)})
-        # Higher distance means more novel states and so higher reward
+
+            novelty_reward = min(kth_dist, 10.0)
+
+        # Track novelty history
+        self._novelty_history.append({
+            'step': self._total_steps,
+            'subtask': current_subtask,
+            'novelty_reward': float(novelty_reward)
+        })
+
         return novelty_reward
+
 
     def get_coverage_stats(self):
         """Get comprehensive coverage statistics"""
@@ -748,8 +749,7 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
             if self._subtask_solved_counter >= self._subtask_hold_steps:
                 self._subtask = self._subtask + 1
                 self._subtask_solved_counter = 0
-                if self._non_decreasing_reward:
-                    self._prev_reward = current_reward
+                self.subtask_switch_step = self.index_seed_step
         else:
             self._subtask_solved_counter = 0
       elif self._subtask == 1:
@@ -758,8 +758,7 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
             if self._subtask_solved_counter >= self._subtask_hold_steps:
                 self._subtask = self._subtask + 1
                 self._subtask_solved_counter = 0
-                if self._non_decreasing_reward:
-                    self._prev_reward = current_reward
+                self.subtask_switch_step = self.index_seed_step
         else:
             self._subtask_solved_counter = 0
       elif self._subtask == 2:
@@ -768,8 +767,7 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
             if self._subtask_solved_counter >= self._subtask_hold_steps:
                 self._subtask = self._subtask + 1
                 self._subtask_solved_counter = 0
-                if self._non_decreasing_reward:
-                    self._prev_reward = current_reward
+                self.subtask_switch_step = self.index_seed_step
         else:
             self._subtask_solved_counter = 0
             
@@ -779,8 +777,7 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
             if self._subtask_solved_counter >= self._subtask_hold_steps:
                 self._subtask = self._subtask + 1
                 self._subtask_solved_counter = 0
-                if self._non_decreasing_reward:
-                    self._prev_reward = current_reward
+                self.subtask_switch_step = self.index_seed_step
         else:
             self._subtask_solved_counter = 0
       elif self._subtask == 4:
@@ -789,8 +786,7 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
             if self._subtask_solved_counter >= self._subtask_hold_steps:
                 self._subtask = self._subtask + 1
                 self._subtask_solved_counter = 0
-                if self._non_decreasing_reward:
-                    self._prev_reward = current_reward
+                self.subtask_switch_step = self.index_seed_step
         else:
             self._subtask_solved_counter = 0
       elif self._subtask == 5:
@@ -799,8 +795,7 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
             if self._subtask_solved_counter >= self._subtask_hold_steps:
                 self._subtask = self._subtask + 1
                 self._subtask_solved_counter = 0
-                if self._non_decreasing_reward:
-                    self._prev_reward = current_reward
+                self.subtask_switch_step = self.index_seed_step
         else:
             self._subtask_solved_counter = 0
             
@@ -819,18 +814,20 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         else:        
             goal_emb = self._subtask_means[self._subtask]
             dist = self._compute_embedding_distance(emb, goal_emb, self._subtask)
-            
-            step_reward	 = dist 
+        
             bonus_reward = self._subtask * self._subtask_cost
-            reward = step_reward + bonus_reward
+            reward = dist + bonus_reward
                     
             # Check if the subtask is completed
             self._check_subtask_completion(dist, reward)
         
             # print(f"WRAPPER- Step:{self.index_seed_step}, reward: {reward}, subtask: {self._subtask}. distance: {dist}")
             
-        # intrinsic_bonus = self._compute_intrinsic_reward(emb)
-        # reward += self._intrinsic_scale * intrinsic_bonus
+        intrinsic_bonus = self._compute_intrinsic_reward(emb)
+        if self.subtask_switch_step > 0 and (self.index_seed_step - self.subtask_switch_step) < 7:
+            reward += (self.increase_intrinsic_scale_after_subtask + self._intrinsic_scale) * intrinsic_bonus
+        else:
+            reward += self._intrinsic_scale * intrinsic_bonus
         return reward
       
 
