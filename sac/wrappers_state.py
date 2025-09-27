@@ -367,6 +367,7 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         self._k_nearest = k_nearest
         self._max_memory = max_memory
         self._embedding_memory_per_subtask = defaultdict(list)
+        self._state_memory_per_subtask = defaultdict(list)
         
         # Coverage tracking attributes
         self._coverage_grid_size = coverage_grid_size
@@ -377,6 +378,17 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         self._state_visit_counts = {}
         self._unique_states_visited = 0
         self._total_steps = 0
+        
+        # State coverage tracking attributes
+        self._state_coverage_grid = None
+        self._state_dim = None
+        self._visited_obs_states = set()
+        self._state_coverage_grid_size = coverage_grid_size
+        self._unique_obs_states_visited = 0
+        self._state_visited_per_subtask = defaultdict(set)
+        self._state_norm_fitted = False
+        self._state_running_min = None
+        self._state_running_max = None
         
         # Similarity-preserving grid mapping
         self._use_similarity_grid = True
@@ -531,7 +543,7 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         return coord_tuple
 
     def _update_coverage_metrics(self, emb):
-        """Update various coverage metrics"""
+        """Update various coverage metrics based on embedding"""
         self._total_steps += 1
         
         # Grid-based coverage
@@ -588,7 +600,7 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
             'total_grid_cells': np.sum(self._coverage_grid > 0)
         })
         
-    def _compute_intrinsic_reward(self, emb):
+    def _compute_intrinsic_reward_from_embedding(self, emb):
         current_subtask = self._subtask
         memory = self._embedding_memory_per_subtask[current_subtask]
 
@@ -610,7 +622,43 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         self._novelty_history.append({
             'step': self._total_steps,
             'subtask': current_subtask,
-            'novelty_reward': float(novelty_reward)
+            'novelty_reward': float(novelty_reward),
+            'reward_type': 'embedding'
+        })
+
+        return novelty_reward
+        
+    def _compute_intrinsic_reward_from_state(self, state):
+        """Compute intrinsic reward based on state novelty"""
+        current_subtask = self._subtask
+        
+        # Initialize state memory if not already done
+        if not hasattr(self, '_state_memory_per_subtask'):
+            self._state_memory_per_subtask = defaultdict(list)
+            
+        memory = self._state_memory_per_subtask[current_subtask]
+        
+        if len(memory) >= self._max_memory:
+            memory.pop(0)
+        memory.append(state.copy())
+        
+        # If not enough samples yet → encourage exploration
+        if len(memory) <= self._k_nearest:
+            novelty_reward = 1.0
+        else:
+            # Calculate state distance using L2 norm 
+            dists = [np.linalg.norm(state - mem) for mem in memory[:-1]]
+            kth = min(self._k_nearest, len(dists) - 1)
+            kth_dist = np.partition(dists, kth)[kth]
+            
+            novelty_reward = min(kth_dist, 10.0)
+
+        # Track novelty history
+        self._novelty_history.append({
+            'step': self._total_steps,
+            'subtask': current_subtask,
+            'novelty_reward': float(novelty_reward),
+            'reward_type': 'state'
         })
 
         return novelty_reward
@@ -629,10 +677,18 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
             'grid_coverage_percentage': latest['grid_coverage'] * 100,
             'unique_state_ratio': latest['unique_ratio'],
             'current_subtask': self._subtask,
-            'average_novelty': np.mean([h['novelty_reward'] for h in self._novelty_history[-100:]]) if self._novelty_history else 0,
             'similarity_mapping_fitted': self._similarity_mapping_fitted,
             'using_similarity_grid': self._use_similarity_grid,
         }
+        
+        # Add intrinsic reward stats
+        if hasattr(self, '_state_memory_per_subtask') and self._novelty_history:
+            state_rewards = [h['novelty_reward'] for h in self._novelty_history[-100:] 
+                            if h.get('reward_type') == 'state']
+            if state_rewards:
+                stats['average_state_novelty'] = np.mean(state_rewards)
+                stats['max_state_novelty'] = np.max(state_rewards)
+                stats['state_memory_size'] = sum(len(mem) for mem in self._state_memory_per_subtask.values())
         
         # Add grid shape information
         if self._coverage_grid is not None:
@@ -724,6 +780,10 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         self._subtask = 0
         self._subtask_solved_counter = 0
         
+        # Reset state memory for the next episode
+        if hasattr(self, '_state_memory_per_subtask'):
+            self._state_memory_per_subtask = defaultdict(list)
+        
         # Optionally reset coverage tracking (uncomment if you want fresh coverage each episode)
         # self._coverage_grid = np.zeros_like(self._coverage_grid) if self._coverage_grid is not None else None
         # self._visited_states = set()
@@ -781,7 +841,7 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         else:
             self._subtask_solved_counter = 0
       elif self._subtask == 4:
-        if dist > -0.03:
+        if dist > -0.04:
             self._subtask_solved_counter += 1
             if self._subtask_solved_counter >= self._subtask_hold_steps:
                 self._subtask = self._subtask + 1
@@ -801,12 +861,13 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
             
             
     def _get_reward_from_image(self, image, flag):
+        """Calculate the reward based on the visual embedding and task progress"""
         image_tensor = self._to_tensor(image)
         emb = self._model.infer(image_tensor).numpy().embs  # Shape: (emb_dim,)
         # emb = self._model.module.infer(image_tensor).numpy().embs
 
-        if flag == "train":
-            self._update_coverage_metrics(emb)
+        # if flag == "train":
+        #     self._update_coverage_metrics(emb)
 
         if self._subtask >= self._num_subtasks:
             reward = self._subtask_cost * self._subtask
@@ -823,11 +884,6 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         
             # print(f"WRAPPER- Step:{self.index_seed_step}, reward: {reward}, subtask: {self._subtask}. distance: {dist}")
             
-        intrinsic_bonus = self._compute_intrinsic_reward(emb)
-        if self.subtask_switch_step > 0 and (self.index_seed_step - self.subtask_switch_step) < 7:
-            reward += (self.increase_intrinsic_scale_after_subtask + self._intrinsic_scale) * intrinsic_bonus
-        else:
-            reward += self._intrinsic_scale * intrinsic_bonus
         return reward
       
 
@@ -836,7 +892,25 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         obs, env_reward, done, info = self.env.step(action)
         info["env_reward"] = env_reward
         pixels = self._render_obs()
-        learned_reward = self._get_reward_from_image(pixels, flag)
+        
+        # Get the reward from image embedding (task reward)
+        task_reward = self._get_reward_from_image(pixels, flag)
+        
+        # Calculate intrinsic reward based on state/observation
+        if flag == "train" and hasattr(self, '_state_memory_per_subtask'):
+            self._update_coverage_metrics(obs)
+            intrinsic_reward = self._compute_intrinsic_reward_from_state(obs)
+            if self.subtask_switch_step > 0 and (self.index_seed_step - self.subtask_switch_step) < 7:
+                intrinsic_scale = self.increase_intrinsic_scale_after_subtask + self._intrinsic_scale
+            else:
+                intrinsic_scale = self._intrinsic_scale
+                
+            # Combine task reward with intrinsic reward
+            final_reward = task_reward + intrinsic_scale * intrinsic_reward
+            info["task_reward"] = task_reward
+            info["intrinsic_reward"] = intrinsic_reward
+        else:
+            final_reward = task_reward
         
         if self.index_seed_step % 20000 == 0 and flag == "train":
             coverage_stats = self.get_coverage_stats()
@@ -866,8 +940,8 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
                         print(f"Saved coverage visualization to {viz_file}")
                     except ImportError:
                         pass  # matplotlib not available
-
-        return obs, learned_reward, done, info
+        
+        return obs, final_reward, done, info
 
       
 class REDSLearnedVisualReward(LearnedVisualReward):
@@ -927,42 +1001,7 @@ class REDSLearnedVisualReward(LearnedVisualReward):
         reward = self._model.predict_reward([image_features], [task_embedding])
         return reward[0].item() if reward[0].numel() == 1 else reward[0]
         
-    def step(self, action, rank, exp_dir, flag):
-        obs, env_reward, done, info = self.env.step(action)
-        info["env_reward"] = env_reward
-        pixels = self._render_obs()
-        learned_reward = self._get_reward_from_image(pixels)
-        
-        # if self.index_seed_step % 20000 == 0 and flag == "train":
-        #     coverage_stats = self.get_coverage_stats()
-        #     info['coverage_stats'] = coverage_stats
-        #     if rank == 0:
-        #         self.save_coverage_data('coverage_analysis.json')
 
-        #         if self._coverage_grid is not None and self._coverage_grid.ndim == 2:
-        #             try:
-        #                 import matplotlib.pyplot as plt
-        #                 # Create directory if it does not exist
-        #                 coverage_dir = os.path.join(exp_dir, 'grid_coverage')
-        #                 os.makedirs(coverage_dir, exist_ok=True)
-
-        #                 plt.figure(figsize=(8, 8))
-        #                 plt.imshow(self._coverage_grid, cmap='Blues', origin='lower')
-        #                 plt.title(f'Coverage Grid at Step {self.index_seed_step}\n'
-        #                           f'Coverage: {coverage_stats.get("grid_coverage_percentage", 0):.1f}% '
-        #                           f'({coverage_stats.get("visited_grid_cells", 0)}/{coverage_stats.get("total_grid_cells", 0)} cells)')
-        #                 plt.xlabel('Grid X (Projected Embedding Dim 1)')
-        #                 plt.ylabel('Grid Y (Projected Embedding Dim 2)')
-        #                 plt.colorbar(label='Visited (1) / Not Visited (0)')
-
-        #                 viz_file = os.path.join(coverage_dir, f'coverage_grid_step_{self.index_seed_step}.png')
-        #                 plt.savefig(viz_file, dpi=150, bbox_inches='tight')
-        #                 plt.close()
-        #                 print(f"Saved coverage visualization to {viz_file}")
-        #             except ImportError:
-        #                 pass  # matplotlib not available
-
-        return obs, learned_reward, done, info
 
   
 
