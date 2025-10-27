@@ -39,8 +39,6 @@ import wandb
 import os
 import json
 
-import time
-
 # pylint: disable=logging-fstring-interpolation
 
 FLAGS = flags.FLAGS
@@ -79,7 +77,6 @@ def evaluate(
       # Reset the buffer and environment state for holdr.
       env.reset_state()
     episode_reward = 0
-    count=0
     while not done:
       # Capture frame for last episode only
             if i == num_episodes - 1:
@@ -96,11 +93,8 @@ def evaluate(
                     
                 last_episode_actions.append(action_np.tolist())
                 
-            
-            base_env= env.unwrapped
-            base_env.index_seed_steps = count
-            count+=1
-            observation, reward, done, info = env.step(action, exp_dir=exp_dir, rank=0, flag="valid")
+                
+            observation, reward, done, info = env.step(action)
             episode_reward += reward
             
             # Capture reward for last episode only
@@ -110,23 +104,23 @@ def evaluate(
       stats[k].append(v)
     if "eval_score" in info:
       stats["eval_score"].append(info["eval_score"])
-      print(f"Episode {i} eval score: {stats['eval_score']}")
     episode_rewards.append(episode_reward)
-    
-    actions_file = os.path.join(exp_dir, "last_evaluation_actions.json")
-        
-    action_data = {
-        "actions": last_episode_actions,
-        "total_reward": sum(last_episode_rewards),
-    }
-    
-    with open(actions_file, 'w') as f:
-        json.dump(action_data, f, indent=2)
-    
-    logging.info(f"Saved last evaluation actions to {actions_file}")
-    
-    # Log video and reward plot to wandb
-    if last_episode_frames and FLAGS.wandb:
+  
+  # After all episodes are done, save the actions from the last episode
+  actions_file = os.path.join(exp_dir, "last_evaluation_actions.json")
+      
+  action_data = {
+      "actions": last_episode_actions,
+      "total_reward": sum(last_episode_rewards),
+  }
+  
+  with open(actions_file, 'w') as f:
+      json.dump(action_data, f, indent=2)
+  
+  logging.info(f"Saved last evaluation actions to {actions_file}")
+  
+  # Log video and reward plot to wandb
+  if last_episode_frames and FLAGS.wandb:
         # Convert frames to proper format (time, channel, height, width)
         frames = np.array([frame.transpose(2, 0, 1) for frame in last_episode_frames])
         wandb.log({
@@ -184,10 +178,10 @@ def main(_):
   
   if FLAGS.wandb:
     if FLAGS.resume:
-        wandb_id = "9tqip0ht"
-        wandb.init(project="MultipleSeeds6Subtask", group="INEST-IRL_Allo_42", name="INEST-IRL_Allo_42", id=wandb_id, mode="offline", resume="must")
+        wandb_id = "oyicn23i"
+        wandb.init(project="MultipleSeeds6Subtask", group="Env_Seed_12", name="Env_Seed_12", id=wandb_id, mode="offline", resume="must")
     else:
-        wandb.init(project="MultipleSeeds6Subtask", group="INEST-IRL_KNN_24", name="INEST-IRL_KNN_24", mode="offline")
+        wandb.init(project="MultipleSeeds6Subtask", group="Env_Seed_12", name="Env_Seed_12", mode="offline")
     wandb.config.update(FLAGS, allow_val_change=True)
     wandb.run.log_code(".")
     wandb.config.update(config.to_dict(), allow_val_change=True)
@@ -219,7 +213,7 @@ def main(_):
   )
   eval_env = utils.make_env(
       FLAGS.env_name,
-      FLAGS.seed + 45,
+      FLAGS.seed + 42,
       action_repeat=config.action_repeat,
       frame_stack=config.frame_stack,
       save_dir=osp.join(exp_dir, "video", "eval"),
@@ -336,7 +330,7 @@ def main(_):
           frame = env.render(mode="rgb_array")
           training_frames.append(frame) 
           
-      next_observation, reward, done, info = env.step(action, exp_dir = exp_dir, rank = 0, flag="train")
+      next_observation, reward, done, info = env.step(action)
       episode_reward += reward
       
       if FLAGS.wandb:
@@ -432,10 +426,10 @@ def main(_):
             should_record_video = False
             
         observation, done = env.reset(), False
-        if "holdr" in config.reward_wrapper.type:
-          # print("Resetting buffer and environment state.")
-          # buffer.reset_state()
-          env.reset_state()
+        # if "holdr" in config.reward_wrapper.type:
+        #   # print("Resetting buffer and environment state.")
+        #   # buffer.reset_state()
+        #   env.reset_state()
 
         for k, v in info["episode"].items():
           logger.log_scalar(v, info["total"]["timesteps"], k, "training")

@@ -58,7 +58,7 @@ class SweepToTopEnv(BaseEnv):
         self.rand_shapes = rand_shapes
         self.rand_colors = rand_colors
         self.num_debris = 3
-        self.stage_completed = [False] * self.num_debris
+        self.stage_completed = [0] * self.num_debris
         self.starting_position = [0] * self.num_debris
         self.actual_goal_stage = 0 #0 is red, 1 is blue, 2 is yellow
         self.last_color_reward = 0
@@ -164,7 +164,7 @@ class SweepToTopEnv(BaseEnv):
         # Block lookup index.
         self.__ent_index = en.EntityIndex(self.__debris_shapes)
         
-        self.stage_completed = [False] * self.num_debris
+        self.stage_completed = [0] * self.num_debris
         self.actual_goal_stage = 0
         self.last_color_reward = 0
         
@@ -194,7 +194,7 @@ class SweepToTopEnv(BaseEnv):
     #     self.rng.shuffle(colors_set)
     #     debris_colors = colors_set[: self.num_debris]
         
-    #     first_subtask = False
+    #     first_subtask = True
     #     second_subtask = False
     #     third_subtask = False
         
@@ -744,37 +744,56 @@ class SweepToTopEnv(BaseEnv):
         return np.concatenate([state, goal_one_hot], axis=0)
 
     def score_on_end_of_traj(self) -> float:
-        # score = number of debris entirely contained in goal zone / 3
+        """
+        Score based on the correct sequential placement of blocks in the goal zone:
+        - 1 point: if only the red block is in the goal zone
+        - 2 points: if red and blue blocks are in the goal zone (in that order)
+        - 3 points: if all three blocks are in the goal zone (in the correct order)
+        - 0 points: any other configuration
+        """
+        # Get all entities completely contained in the goal zone
         overlap_ents = self.__sensor_ref.get_overlapping_ents(
             contained=True, ent_index=self.__ent_index
         )
-        target_set = set(self.__debris_shapes)
-        n_overlap_targets = len(target_set & overlap_ents)
-        score = n_overlap_targets / len(target_set)
+        
+        # If no entities in goal zone, return 0
         if len(overlap_ents) == 0:
-            score = 0
-        return score
+            return 0.0
+        score = 0
+        red_block, blue_block, yellow_block = self.stage_completed
+        if red_block != 0 and blue_block == 0 and yellow_block == 0:
+            score = 1.0
+        elif red_block != 0 and blue_block != 0 and yellow_block == 0 and blue_block > red_block:
+            score = 2.0
+        elif red_block != 0 and blue_block != 0 and yellow_block != 0 and blue_block > red_block and yellow_block > blue_block:
+            score = 3.0
+        else:
+            score = 0.0
+            
+        return score / 3.0
+ 
+        
 
-    def _dense_reward(self) -> float:
-        """Mean distance of all debris entitity positions to goal zone."""
-        y = 1
-        target_goal_dists = []
-        for target_shape in self.__debris_shapes:
-            target_pos = target_shape.shape_body.position
-            goal_pos = (target_pos[0], y)  # Top of screen.
-            dist = np.linalg.norm(target_pos - goal_pos)
-            if target_pos[1] > 0.88:
-                dist = 0
-            target_goal_dists.append(dist)
-        target_goal_dists = np.mean(target_goal_dists)
-        return -1.0 * target_goal_dists
+    # def _dense_reward(self) -> float:
+    #     """Mean distance of all debris entitity positions to goal zone."""
+    #     y = 1
+    #     target_goal_dists = []
+    #     for target_shape in self.__debris_shapes:
+    #         target_pos = target_shape.shape_body.position
+    #         goal_pos = (target_pos[0], y)  # Top of screen.
+    #         dist = np.linalg.norm(target_pos - goal_pos)
+    #         if target_pos[1] > 0.88:
+    #             dist = 0
+    #         target_goal_dists.append(dist)
+    #     target_goal_dists = np.mean(target_goal_dists)
+    #     return -1.0 * target_goal_dists
 
-    def _sparse_reward(self) -> float:
-        """Fraction of debris entities inside goal zone."""
-        # `score_on_end_of_traj` is supposed to be called at the end of a
-        # trajectory but we use it here since it gives us exactly the reward
-        # we're looking for.
-        return self.score_on_end_of_traj()
+    # def _sparse_reward(self) -> float:
+    #     """Fraction of debris entities inside goal zone."""
+    #     # `score_on_end_of_traj` is supposed to be called at the end of a
+    #     # trajectory but we use it here since it gives us exactly the reward
+    #     # we're looking for.
+    #     return self.score_on_end_of_traj()
 
     def _color_reward(self) -> float:
         """
@@ -832,40 +851,40 @@ class SweepToTopEnv(BaseEnv):
         grip_reward = 0
         
         # print(f"State: {self.stage_completed}, Actual goal stage: {self.actual_goal_stage}, Index: {self.index_seed_steps}, In Goal Red: {in_goal(distances['red'][1])}, In Goal Blue: {in_goal(distances['blue'][1])}, In Goal Yellow: {in_goal(distances['yellow'][1])}")
-        if not self.stage_completed[0]:
+        if self.stage_completed[0] == 0:
             # print("Stage 0: Moving to red block")
             # Reward for moving the robot near the red block
             moving_to_block_reward += (1.0 / (1.0 + distances["red"][3]))
             push_reward += (distances["red"][4] - distances["red"][2]) / distances["red"][4]
             red_block_x, red_block_y = blocks["red"].shape_body.position
             grip_reward = 1.0 if self.is_block_gripped(red_block_x, red_block_y) else 0.0
-            if in_goal(distances["red"][1]):
-                self.stage_completed[0] = True
+            if in_goal(distances["red"][1]) and not (in_goal(distances["blue"][1]) or in_goal(distances["yellow"][1])):
+                self.stage_completed[0] = self.index_seed_steps
                 self.actual_goal_stage = 1
-        elif not self.stage_completed[1] and in_goal(distances["red"][1]):
+        elif self.stage_completed[1] == 0 and in_goal(distances["red"][1]):
             # print("Stage 1: Moving to blue block")
             # Reward for moving the robot near the blue block
             moving_to_block_reward += 1.2 + 1.0 / (1.0 + distances["blue"][3])
             push_reward += 1.2 + (distances["blue"][4] - distances["blue"][2]) / distances["blue"][4]
             blue_block_x, blue_block_y = blocks["blue"].shape_body.position
             grip_reward = 1.5 if self.is_block_gripped(blue_block_x, blue_block_y) else 0.0
-            if in_goal(distances["blue"][1]):
-                self.stage_completed[1] = True
+            if in_goal(distances["blue"][1]) and in_goal(distances["red"][1]) and not in_goal(distances["yellow"][1]):
+                self.stage_completed[1] = self.index_seed_steps
                 self.actual_goal_stage = 2
-        elif not self.stage_completed[2] and in_goal(distances["blue"][1]) and in_goal(distances["red"][1]):
+        elif self.stage_completed[2] == 0 and in_goal(distances["blue"][1]) and in_goal(distances["red"][1]):
             # print("Stage 2: Moving to yellow block")
             # Reward for moving the robot near the yellow block
             moving_to_block_reward += 2.4 + 1.0 / (1.0 + distances["yellow"][3])
             push_reward += 2.4 + (distances["yellow"][4] - distances["yellow"][2]) / distances["yellow"][4]
             yellow_block_x, yellow_block_y = blocks["yellow"].shape_body.position
             grip_reward = 2 if self.is_block_gripped(yellow_block_x, yellow_block_y) else 0.0
-            if in_goal(distances["yellow"][1]):
-                self.stage_completed[2] = True
+            if in_goal(distances["yellow"][1]) and in_goal(distances["blue"][1]) and in_goal(distances["red"][1]):
+                self.stage_completed[2] = self.index_seed_steps
                 self.actual_goal_stage = 3
             else:
                 self.last_color_reward = 0.3 * moving_to_block_reward + 0.7 * push_reward
          
-        if self.stage_completed[0] and self.stage_completed[1] and self.stage_completed[2]:
+        if self.stage_completed[0]!= 0 and self.stage_completed[1] != 0 and self.stage_completed[2]!=0:
             # print("All blocks in goal area, finalizing reward")
             # All blocks are in the goal area
             # To keep the final reward at the higher value possible without falling to zero
@@ -885,6 +904,7 @@ class SweepToTopEnv(BaseEnv):
 
     def reset(self) -> np.ndarray:
         obs = super().reset()
+        self.stage_completed = [0] * self.num_debris
         if self.use_state:
             return self.get_state()
         return obs

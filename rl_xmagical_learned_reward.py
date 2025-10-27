@@ -40,7 +40,7 @@ def main(_):
   with open(os.path.join(FLAGS.pretrained_path, "metadata.yaml"), "r") as fp:
     kwargs = yaml.load(fp, Loader=yaml.FullLoader)
 
-  reward_type = "holdr"  
+
   
   # if kwargs["algo"] == "goal_classifier":
   #   reward_type = "goal_classifier"
@@ -51,20 +51,22 @@ def main(_):
   # else:
   #   reward_type = "distance_to_goal"
 
+  reward_type = "holdr"  
   # Map the embodiment to the x-MAGICAL env name.
   env_name = XMAGICAL_EMBODIMENT_TO_ENV_NAME[kwargs["embodiment"]]
 
   # Generate a unique experiment name.
-  experiment_name = string_from_kwargs(
-      env_name=env_name,
-      reward="learned",
-      reward_type=reward_type,
-      mode=kwargs["mode"],
-      algo=kwargs["algo"],
-      uid=unique_id(),
-  )
+  # experiment_name = string_from_kwargs(
+  #     env_name=env_name,
+  #     reward="learned",
+  #     reward_type=reward_type,
+  #     mode=kwargs["mode"],
+  #     algo=kwargs["algo"],
+  #     uid=unique_id(),
+  # )
   
-  # experiment_name = "env_name=SweepToTop-Gripper-State-Allo-TestLayout-v0_reward=learned_reward_type=holdr_mode=same_algo=xirl_uid=26886688-5c1e-494d-8e16-5add44e43a7c"
+  
+  experiment_name = "env_name=SweepToTop-Gripper-State-Allo-TestLayout-v0_reward=learned_reward_type=holdr_mode=same_algo=xirl_uid=ef3eede2-80d6-465a-bda9-1c4bcbc01209"
   logging.info("Experiment name: %s", experiment_name)
 
   # Execute each seed in parallel.
@@ -89,7 +91,9 @@ def main(_):
             "--device",
             f"{FLAGS.device}",
             "--wandb",
-            f"{FLAGS.wandb}"
+            f"{FLAGS.wandb}",
+            "--resume",
+            f"{True}"
         ]))
 
   # Wait for each seed to terminate.

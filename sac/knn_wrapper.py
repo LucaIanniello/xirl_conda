@@ -601,11 +601,17 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         if len(memory) <= self._k_nearest:
             novelty_reward = 1.0
         else:
+            # Calculate distances to all memories except the just added one
             dists = [np.linalg.norm(emb - mem) for mem in memory[:-1]]
-            kth = min(self._k_nearest, len(dists) - 1)
-            kth_dist = np.partition(dists, kth)[kth]
-
-            novelty_reward = min(kth_dist, 10.0)
+            
+            # Sort distances and get the k nearest
+            sorted_dists = sorted(dists)
+            k = min(self._k_nearest, len(sorted_dists))
+            k_nearest_dists = sorted_dists[:k]
+            
+            # Compute mean of k nearest distances as the novelty reward
+            mean_dist = np.mean(k_nearest_dists)
+            novelty_reward = min(mean_dist, 10.0)
 
         # Track novelty history
         self._novelty_history.append({
@@ -824,11 +830,11 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
         
             # print(f"WRAPPER- Step:{self.index_seed_step}, reward: {reward}, subtask: {self._subtask}. distance: {dist}")
             
-        # intrinsic_bonus = self._compute_intrinsic_reward(emb)
-        # if self.subtask_switch_step > 0 and (self.index_seed_step - self.subtask_switch_step) < 7:
-        #     reward += (self.increase_intrinsic_scale_after_subtask + self._intrinsic_scale) * intrinsic_bonus
-        # else:
-        #     reward += self._intrinsic_scale * intrinsic_bonus
+        intrinsic_bonus = self._compute_intrinsic_reward(emb)
+        if self.subtask_switch_step > 0 and (self.index_seed_step - self.subtask_switch_step) < 7:
+            reward += (self.increase_intrinsic_scale_after_subtask + self._intrinsic_scale) * intrinsic_bonus
+        else:
+            reward += self._intrinsic_scale * intrinsic_bonus
         return reward
       
 
@@ -869,7 +875,9 @@ class HOLDRLearnedVisualReward(LearnedVisualReward):
                         pass  # matplotlib not available
 
         return obs, learned_reward, done, info
-    
+
+
+      
 class REDSLearnedVisualReward(LearnedVisualReward):
     """Replace the environment reward with the output of a REDS model."""
 

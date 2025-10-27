@@ -41,20 +41,21 @@ def main(_):
   env_name = XMAGICAL_EMBODIMENT_TO_ENV_NAME[FLAGS.embodiment]
 
   # Generate a unique experiment name.
-  experiment_name = string_from_kwargs(
-      env_name=env_name,
-      reward="sparse_env",
-      uid=unique_id(),
-  )
-  logging.info("Experiment name: %s", experiment_name)
+  # experiment_name = string_from_kwargs(
+  #     env_name=env_name,
+  #     reward="sparse_env",
+  #     uid=unique_id(),
+  # )
+  # logging.info("Experiment name: %s", experiment_name)
 
   # Execute each seed in parallel.
+  experiment_name = "env_name=SweepToTop-Gripper-State-Allo-TestLayout-v0_reward=sparse_env_uid=6e7fcf6c-902b-435b-abdb-25cedd93d521"
   procs = []
   for seed in range(*list(map(int, FLAGS.seeds))):
     procs.append(
         subprocess.Popen([  # pylint: disable=consider-using-with
             "python",
-            "train_policy.py",
+            "train_policy_env.py",
             "--experiment_name",
             experiment_name,
             "--env_name",
@@ -62,11 +63,13 @@ def main(_):
             "--config",
             f"{CONFIG_PATH}:{FLAGS.embodiment}",
             "--seed",
-            f"{seed}",
+            f"{12}",
             "--device",
             f"{FLAGS.device}",
              "--wandb",
-            f"{FLAGS.wandb}"
+            f"{FLAGS.wandb}",
+            "--resume",
+            f"{True}"
         ]))
 
   # Wait for each seed to terminate.
