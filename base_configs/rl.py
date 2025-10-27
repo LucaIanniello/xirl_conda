@@ -33,7 +33,7 @@ def get_config():
   # ================================================= #
   # Main parameters.
   # ================================================= #
-  config.save_dir = "/home/liannello/xirl/experiment_results/Egocentric/Results"
+  config.save_dir = "/leonardo/home/userexternal/lianniel/results/new_intrinsic"
 
   # Set this to True to allow CUDA to find the best convolutional algorithm to
   # use for the given parameters. When False, cuDNN will deterministically
@@ -50,10 +50,14 @@ def get_config():
   config.frame_stack = 3
 
   config.reward_wrapper = ml_collections.ConfigDict()
-  config.reward_wrapper.pretrained_path = "/home/liannello/xirl/experiment_results/Egocentric/pretraining/dataset=xmagical_mode=same_algo=xirl_embodiment=gripper=EGO_SubtaskXirl"
-  # config.reward_wrapper.pretrained_path = None
+  # config.reward_wrapper.pretrained_path = "/leonardo/home/userexternal/lianniel/Egocentric_Pretrain/dataset=xmagical_mode=same_algo=xirl_embodiment=gripper_EGO_6Subtask"
+  config.reward_wrapper.pretrained_path = "/leonardo/home/userexternal/lianniel/Allocentric_Pretrain/dataset=xmagical_mode=same_algo=xirl_embodiment=gripper_ALLO_6Subtasks"
+  # config.reward_wrapper.pretrained_path = "/leonardo/home/userexternal/lianniel/Egocentric_Pretrain/dataset=xmagical_mode=same_algo=holdr_embodiment=gripper_EGO"
   # Can be one of ['distance_to_goal', 'goal_classifier', holdr].
-  config.reward_wrapper.type = "holdr"
+  
+  # This must be changed to use the desired learned reward.
+  # Accepted values: 'distance_to_goal', 'goal_classifier', 'inest', 'inest_knn', 'state_intrinsic', 'reds'
+  config.reward_wrapper.type = "inest"
 
   # Vector environment parameters for DDP
   config.num_envs_per_process = 3  # Number of parallel environments per DDP process
@@ -61,7 +65,7 @@ def get_config():
   # ================================================= #
   # Training parameters.
   # ================================================= #
-  config.num_train_steps = 10_000_000
+  config.num_train_steps = 20_000_000
   config.replay_buffer_capacity = 1_000_000
   config.num_seed_steps = 30_000
   config.num_eval_episodes = 150
