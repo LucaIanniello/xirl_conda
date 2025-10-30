@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH -A IscrB_DRSoRo_0
 #SBATCH --time=24:00:00
-#SBATCH --job-name=INEST-IRL_Allo_42
+#SBATCH --job-name=INEST-IRL_KNN_42
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=s327313@studenti.polito.it
-#SBATCH --output=INEST-IRL_Allo_42.log
+#SBATCH --output=INEST-IRL_KNN_42.log
 #SBATCH --gres=gpu:1
 #SBATCH --partition=boost_usr_prod
 #SBATCH --cpus-per-task=8
@@ -12,10 +12,10 @@
 #SBATCH --mem=100GB
 
 
-# Load conda
 source $HOME/anaconda3/etc/profile.d/conda.sh
 
 # Activate environment
+echo "Activating conda environment..."
 conda activate xirl_clone
 
 echo "Current conda environment: $CONDA_DEFAULT_ENV"
@@ -25,7 +25,7 @@ python --version
 # Navigate to project directory
 cd $HOME/xirl_conda
 
-$PORT=$((29000 + SLURM_JOB_ID % 1000))
+PORT=$((29000 + SLURM_JOB_ID % 1000))
 
 # Remap CUDA_VISIBLE_DEVICES to match SLURM allocation
 # export CUDA_VISIBLE_DEVICES=1,2
@@ -36,18 +36,21 @@ $PORT=$((29000 + SLURM_JOB_ID % 1000))
 # Execution code for INEST-IRL EGOCENTRIC
 # Algo accepted values : 'distance_to_goal', 'goal_classifier', 'inest', 'inest_knn', 'state_intrinsic', 'reds'
 # They must be changed also in rl.py if modified here.
+python rl_xmagical_learned_reward.py \
+  --pretrained_path /leonardo/home/userexternal/lianniel/Egocentric_Pretrain/dataset=xmagical_mode=same_algo=xirl_embodiment=gripper_EGO_6Subtask\
+  --seed 42 \
+  --wandb \
+  --algo inest_knn
+
+# Execution code for INEST-IRL ALLOCENTRIC
+# echo "Starting Python script execution..."
 # python rl_xmagical_learned_reward.py \
-#   --pretrained_path /leonardo/home/userexternal/lianniel/Egocentric_Pretrain/dataset=xmagical_mode=same_algo=xirl_embodiment=gripper_EGO_6Subtask\
+#   --pretrained_path /leonardo/home/userexternal/lianniel/Allocentric_Pretrain/dataset=xmagical_mode=same_algo=xirl_embodiment=gripper_ALLO_6Subtasks\
 #   --seed 12 \
 #   --wandb \
 #   --algo inest
 
-# Execution code for INEST-IRL ALLOCENTRIC
-python rl_xmagical_learned_reward.py \
-  --pretrained_path /leonardo/home/userexternal/lianniel/Allocentric_Pretrain/dataset=xmagical_mode=same_algo=xirl_embodiment=gripper_ALLO_6Subtasks\
-  --seed 12 \
-  --wandb \
-  --algo inest
+# echo "Python script finished with exit code: $?"
 
 
 # Execution code for ENVIRONMENTAL REWARD 

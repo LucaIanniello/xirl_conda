@@ -335,10 +335,13 @@ class GoalClassifierLearnedVisualReward(LearnedVisualReward):
 
 
 class INESTIRLLearnedVisualReward(LearnedVisualReward):
+    """INEST IRL learned visual reward with intrinsic motivation and coverage tracking."""
     def __init__(
         self,
         subtask_means,
         distance_scale,
+        normalize_intrinsic = False,
+        scheduled_intrinsic_weight = False,
         index_seed_step = 0,
         subtask_threshold=5.0,
         subtask_cost=2.0,
@@ -398,6 +401,11 @@ class INESTIRLLearnedVisualReward(LearnedVisualReward):
         
         self.subtask_switch_step = 0
         self.increase_intrinsic_scale_after_subtask = 0.2
+        
+        #Flags for normalization
+        self.normalize_intrinsic = normalize_intrinsic
+        self.scheduled_intrinsic_weight = scheduled_intrinsic_weight
+        
 
     def _initialize_coverage_grid(self, embedding_dim):
         """Initialize coverage tracking structures based on embedding dimension"""
@@ -613,6 +621,13 @@ class INESTIRLLearnedVisualReward(LearnedVisualReward):
             'subtask': current_subtask,
             'novelty_reward': float(novelty_reward)
         })
+        
+        if self.normalize_intrinsic:
+            print("WRAPPER: Normalizing intrinsic reward with z-score.")
+            # Normalization with z-score considering the mean and the std of all the distances
+            mean_of_dists = np.mean(dists)
+            std_of_dists = np.std(dists) + 1e-6
+            novelty_reward = (novelty_reward - mean_of_dists) / std_of_dists
 
         return novelty_reward
 
@@ -825,10 +840,17 @@ class INESTIRLLearnedVisualReward(LearnedVisualReward):
             # print(f"WRAPPER- Step:{self.index_seed_step}, reward: {reward}, subtask: {self._subtask}. distance: {dist}")
             
         # intrinsic_bonus = self._compute_intrinsic_reward(emb)
-        # if self.subtask_switch_step > 0 and (self.index_seed_step - self.subtask_switch_step) < 7:
-        #     reward += (self.increase_intrinsic_scale_after_subtask + self._intrinsic_scale) * intrinsic_bonus
+        # if self.scheduled_intrinsic_weight:
+        #     # Exponential scheduler starting from 0.5 and decreasing with time
+        #     # Adjusted for 8M steps: at 1M steps -> ~0.31, at 4M steps -> ~0.18, at 8M steps -> ~0.11
+        #     print("Index_seed_step:", self.index_seed_step)
+        #     intrinsic_weight = max(0.1, 0.5 * np.exp(-0.0000001 * self.index_seed_step))
+        #     reward += intrinsic_weight * self._compute_intrinsic_reward(emb)
         # else:
-        #     reward += self._intrinsic_scale * intrinsic_bonus
+        #     if self.subtask_switch_step > 0 and (self.index_seed_step - self.subtask_switch_step) < 7:
+        #         reward += (self.increase_intrinsic_scale_after_subtask + self._intrinsic_scale) * intrinsic_bonus
+        #     else:
+        #         reward += self._intrinsic_scale * intrinsic_bonus
         return reward
 
     def step(self, action, rank, exp_dir, flag):
@@ -869,10 +891,13 @@ class INESTIRLLearnedVisualReward(LearnedVisualReward):
         return obs, learned_reward, done, info
 
 class KNNINESTIRLLearnedVisualReward(LearnedVisualReward):
+    """INEST IRL learned visual reward with KNN-based intrinsic reward and coverage tracking."""
     def __init__(
         self,
         subtask_means,
         distance_scale,
+        normalize_intrinsic = False,
+        scheduled_intrinsic_weight = False,
         index_seed_step = 0,
         subtask_threshold=5.0,
         subtask_cost=2.0,
@@ -932,6 +957,12 @@ class KNNINESTIRLLearnedVisualReward(LearnedVisualReward):
         
         self.subtask_switch_step = 0
         self.increase_intrinsic_scale_after_subtask = 0.2
+        
+        #Flags for normalization
+        self.normalize_intrinsic = normalize_intrinsic
+        self.scheduled_intrinsic_weight = scheduled_intrinsic_weight
+        
+        
 
     def _initialize_coverage_grid(self, embedding_dim):
         """Initialize coverage tracking structures based on embedding dimension"""
@@ -1412,6 +1443,7 @@ class KNNINESTIRLLearnedVisualReward(LearnedVisualReward):
     
 
 class STATEINTRINSICLearnedVisualReward(LearnedVisualReward):
+    '''Learned visual reward wrapper with state-based intrinsic motivation'''
     def __init__(
         self,
         subtask_means,

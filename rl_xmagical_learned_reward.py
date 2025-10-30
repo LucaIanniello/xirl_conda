@@ -56,6 +56,9 @@ def main(_):
     reward_type = "distance_to_goal"
   else:
     reward_type = "inest"
+    
+  print(f"Using reward type: {reward_type}")
+  print(f"Using seed : {FLAGS.seed}")
  
   # Map the embodiment to the x-MAGICAL env name.
   env_name = XMAGICAL_EMBODIMENT_TO_ENV_NAME[kwargs["embodiment"]]
@@ -72,11 +75,12 @@ def main(_):
   
   # To use a existing experiment name, uncomment below and comment above.
   # It must be followed by the RESUME entry in the subprocess call.
-  experiment_name = "env_name=SweepToTop-Gripper-State-Allo-TestLayout-v0_reward=learned_reward_type=holdr_mode=same_algo=xirl_uid=ef3eede2-80d6-465a-bda9-1c4bcbc01209"
+  experiment_name = "env_name=SweepToTop-Gripper-State-Allo-TestLayout-v0_reward=learned_reward_type=holdr_mode=same_algo=xirl_uid=b3dbafd4-f457-47a4-b91c-8f464dc0fbc3"
   logging.info("Experiment name: %s", experiment_name)
 
-  # Execute each seed in parallel.
-  subprocess.Popen([  # pylint: disable=consider-using-with
+  # Execute each seed and wait for completion
+  print("Starting train_policy.py subprocess...")
+  process = subprocess.Popen([  # pylint: disable=consider-using-with
     "python",
     "train_policy.py",
     "--experiment_name",
@@ -98,10 +102,18 @@ def main(_):
     "--resume",
     f"{True}"
   ])
+  
+  # Wait for the process to complete and get the return code
+  return_code = process.wait()
+  print(f"train_policy.py finished with return code: {return_code}")
+  
+  if return_code != 0:
+    print(f"ERROR: train_policy.py failed with return code {return_code}")
+    exit(return_code)
+  else:
+    print("train_policy.py completed successfully!")
 
-  # Wait for each seed to terminate.
-  for p in procs:
-    p.wait()
+
 
 
 if __name__ == "__main__":

@@ -50,10 +50,9 @@ def get_config():
   config.frame_stack = 3
 
   config.reward_wrapper = ml_collections.ConfigDict()
-  # config.reward_wrapper.pretrained_path = "/leonardo/home/userexternal/lianniel/Egocentric_Pretrain/dataset=xmagical_mode=same_algo=xirl_embodiment=gripper_EGO_6Subtask"
-  config.reward_wrapper.pretrained_path = "/leonardo/home/userexternal/lianniel/Allocentric_Pretrain/dataset=xmagical_mode=same_algo=xirl_embodiment=gripper_ALLO_6Subtasks"
+  config.reward_wrapper.pretrained_path = "/leonardo/home/userexternal/lianniel/Egocentric_Pretrain/dataset=xmagical_mode=same_algo=xirl_embodiment=gripper_EGO_6Subtask"
+  # config.reward_wrapper.pretrained_path = "/leonardo/home/userexternal/lianniel/Allocentric_Pretrain/dataset=xmagical_mode=same_algo=xirl_embodiment=gripper_ALLO_6Subtasks"
   # config.reward_wrapper.pretrained_path = "/leonardo/home/userexternal/lianniel/Egocentric_Pretrain/dataset=xmagical_mode=same_algo=holdr_embodiment=gripper_EGO"
-  # Can be one of ['distance_to_goal', 'goal_classifier', holdr].
   
   # This must be changed to use the desired learned reward.
   # Accepted values: 'distance_to_goal', 'goal_classifier', 'inest', 'inest_knn', 'state_intrinsic', 'reds'
@@ -73,6 +72,9 @@ def get_config():
   config.checkpoint_frequency = 300_000
   config.log_frequency = 20_000
   config.save_video = True
+  
+  config.normalize_intrinsic = False
+  config.scheduled_intrinsic_weight = False
 
   # ================================================= #
   # SAC parameters.

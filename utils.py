@@ -224,14 +224,18 @@ def wrap_learned_reward(env, config, device):
     env = wrappers.DistanceToGoalLearnedVisualReward(**kwargs)
     
   elif config.reward_wrapper.type == "inest":
+    print("THE REWARD IS INEST")
     all_means = load_pickle(pretrained_path, "subtask_means.pkl")
     selected_means_2_4_6 = [all_means[i] for i in [1,3,5]]  # elements 2,4,6
     kwargs["subtask_means"] = selected_means_2_4_6
     kwargs["distance_scale"] = load_pickle(pretrained_path,
                                            "distance_scale.pkl")
+    kwargs["normalize_intrinsic"] = config.get("normalize_intrinsic", False)
+    kwargs["scheduled_intrinsic_weight"] = config.get("scheduled_intrinsic_weight", False)
     env = wrappers.INESTIRLLearnedVisualReward(**kwargs)
     
   elif config.reward_wrapper.type == "inest_knn":
+    print("THE REWARD IS INEST KNN")
     all_means = load_pickle(pretrained_path, "subtask_means.pkl")
     selected_means_2_4_6 = [all_means[i] for i in [1,3,5]]  # elements 2,4,6
     kwargs["subtask_means"] = selected_means_2_4_6
@@ -240,12 +244,22 @@ def wrap_learned_reward(env, config, device):
     env = wrappers.KNNINESTIRLLearnedVisualReward(**kwargs)
     
   elif config.reward_wrapper.type == "state_intrinsic":
+    print("THE REWARD IS STATE INTRINSIC")
     all_means = load_pickle(pretrained_path, "subtask_means.pkl")
     selected_means_2_4_6 = [all_means[i] for i in [1,3,5]]  # elements 2,4,6
     kwargs["subtask_means"] = selected_means_2_4_6
     kwargs["distance_scale"] = load_pickle(pretrained_path,
                                            "distance_scale.pkl")
     env = wrappers.STATEINTRINSICLearnedVisualReward(**kwargs)
+    
+  elif config.reward_wrapper.type == "holdr":
+    print("THE REWARD IS HOLDR")
+    all_means = load_pickle(pretrained_path, "subtask_means.pkl")
+    selected_means_2_4_6 = [all_means[i] for i in [1,3,5]]  # elements 2,4,6
+    kwargs["subtask_means"] = selected_means_2_4_6
+    kwargs["distance_scale"] = load_pickle(pretrained_path,
+                                           "distance_scale.pkl")
+    env = wrappers.HOLDRLearnedVisualReward(**kwargs)
     
   elif config.reward_wrapper.type == "reds":
     print("AAAAAAA")

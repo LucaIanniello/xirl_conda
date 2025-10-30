@@ -184,8 +184,8 @@ def main(_):
   
   if FLAGS.wandb:
     if FLAGS.resume:
-        wandb_id = "9tqip0ht"
-        wandb.init(project="MultipleSeeds6Subtask", group="INEST-IRL_Allo_42", name="INEST-IRL_Allo_42", id=wandb_id, mode="offline", resume="must")
+        wandb_id = "cfhl6lei"
+        wandb.init(project="MultipleSeeds6Subtask", group="INEST-IRL_KNN_42", name="INEST-IRL_KNN_42", id=wandb_id, mode="offline", resume="must")
     else:
         wandb.init(project="MultipleSeeds6Subtask", group="INEST-IRL_KNN_24", name="INEST-IRL_KNN_24", mode="offline")
     wandb.config.update(FLAGS, allow_val_change=True)

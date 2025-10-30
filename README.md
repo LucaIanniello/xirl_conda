@@ -114,7 +114,7 @@ The file to be edited are the following:
 - 'xirl_training.sh': contains the commands to run the experiments.
 - 'rl_xmagical_learned_reward.py': contains the RL script that executes the training with learned reward. In this file, you can set the algorithm to be used for training (distance_to_goal, goal_classifier, inest, inest_knn, state_intrinsic, reds) and the possibility to resume from an existing experiment. 
 - 'train_policy.py': contains the RL training loop. Here you can modify the wandb metrics and parameters.
-- 'rl.py': contains the base config for RL experiments. Here you can set the default algorithm for training and the path of the pretraining model to be used.
+- 'rl.py': contains the base config for RL experiments. Here you can set the default algorithm for training and the path of the pretraining model to be used. In this file, you can also set the parameters for the intrinsic reward normalization and scheduling.
 
 For the XMagical environment, the file 'SweepToTop.py' contains the code that must be sostitute to the 'sweep_to_top.py' file of the library. In this way, the environmental reward and the correct evaluation function are used.
 
